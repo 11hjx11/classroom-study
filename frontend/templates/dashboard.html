@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学情分析看板 - ClassVision</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-light: #818cf8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #00d4ff;
+            --dark: #0f172a;
+            --darker: #020617;
+            --card-bg: rgba(30, 41, 59, 0.8);
+            --card-border: rgba(148, 163, 184, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', 'Space Grotesk', sans-serif;
+            background: linear-gradient(135deg, var(--darker) 0%, var(--dark) 100%);
+            min-height: 100vh;
+            color: #e2e8f0;
+        }
+
+        .dashboard-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding: 1.5rem 2rem;
+            background: var(--card-bg);
+            border-radius: 1.5rem;
+            border: 1px solid var(--card-border);
+            backdrop-filter: blur(10px);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .back-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 0.75rem;
+            color: var(--primary-light);
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .back-btn:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        .header-title h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 0.25rem;
+        }
+
+        .header-title p {
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn-dashboard {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-dashboard:hover {
+            background: var(--primary-light);
+            transform: translateY(-2px);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--card-border);
+            color: #94a3b8;
+        }
+
+        .btn-outline:hover {
+            background: rgba(148, 163, 184, 0.1);
+            color: white;
+            border-color: #94a3b8;
+        }
+
+        /* 指标卡片 */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--card-accent, var(--primary));
+        }
+
+        .metric-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        .metric-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .metric-icon.blue { background: rgba(0, 212, 255, 0.2); color: var(--info); }
+        .metric-icon.green { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+        .metric-icon.orange { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+        .metric-icon.red { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+        .metric-icon.purple { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; }
+        .metric-icon.pink { background: rgba(236, 72, 153, 0.2); color: #ec4899; }
+
+        .metric-label {
+            font-size: 0.875rem;
+            color: #94a3b8;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: white;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-trend {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+        }
+
+        .trend-up { color: var(--success); }
+        .trend-down { color: var(--danger); }
+        .trend-neutral { color: #94a3b8; }
+
+        /* 图表区域 */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .chart-card.full-width {
+            grid-column: span 2;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        .chart-subtitle {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-top: 0.25rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        .chart-container.tall {
+            height: 400px;
+        }
+
+        /* 时段对比 */
+        .segment-comparison {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+        }
+
+        .segment-item {
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 1rem;
+            padding: 1.25rem;
+            text-align: center;
+            border: 1px solid var(--card-border);
+            transition: all 0.3s ease;
+        }
+
+        .segment-item:hover {
+            transform: scale(1.02);
+        }
+
+        .segment-item.opening { border-top: 3px solid var(--info); }
+        .segment-item.efficient { border-top: 3px solid var(--success); }
+        .segment-item.fatigue { border-top: 3pxpx solid var(--warning); }
+        .segment-item.closing { border-top: 3px solid var(--danger); }
+
+        .segment-name {
+            font-size: 0.875rem;
+            color: #94a3b8;
+            margin-bottom: 0.5rem;
+        }
+
+        .segment-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 0.25rem;
+        }
+
+        .segment-bar {
+            height: 6px;
+            background: rgba(148, 163, 184, 0.2);
+            border-radius: 3px;
+            margin-top: 0.75rem;
+            overflow: hidden;
+        }
+
+        .segment-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 1s ease;
+        }
+
+        /* 报告区域 */
+        .report-section {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 1.5rem;
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .report-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        .report-content {
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            max-height: 500px;
+            overflow-y: auto;
+            font-size: 0.875rem;
+            line-height: 1.8;
+            color: #cbd5e1;
+        }
+
+        .report-content h2 {
+            font-size: 1.125rem;
+            color: var(--primary-light);
+            margin: 1.5rem 0 0.75rem 0;
+        }
+
+        .report-content h2:first-child {
+            margin-top: 0;
+        }
+
+        .report-content p {
+            margin-bottom: 0.75rem;
+        }
+
+        .report-loader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 3rem;
+            color: #64748b;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(99, 102, 241, 0.2);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 行为详情 */
+        .behavior-details {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 1rem;
+        }
+
+        .behavior-item {
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .behavior-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin: 0 auto 0.5rem;
+        }
+
+        .behavior-name {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-bottom: 0.25rem;
+        }
+
+        .behavior-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        /* 加载状态 */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(2, 6, 23, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(99, 102, 241, 0.2);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1.5rem;
+        }
+
+        .loading-text {
+            color: #94a3b8;
+            font-size: 0.875rem;
+        }
+
+        /* 响应式 */
+        @media (max-width: 1200px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            .chart-card.full-width {
+                grid-column: span 1;
+            }
+            .segment-comparison {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .behavior-details {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-container {
+                padding: 1rem;
+            }
+            .dashboard-header {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: flex-start;
+            }
+            .segment-comparison {
+                grid-template-columns: 1fr;
+            }
+            .behavior-details {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        /* 历史选择器 */
+        .history-selector {
+            margin-bottom: 1.5rem;
+        }
+
+        .history-selector label {
+            display: block;
+            font-size: 0.875rem;
+            color: #94a3b8;
+            margin-bottom: 0.5rem;
+        }
+
+        .history-selector select {
+            width: 100%;
+            max-width: 400px;
+            padding: 0.75rem 1rem;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--card-border);
+            border-radius: 0.75rem;
+            color: white;
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        .history-selector select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- 头部 -->
+        <header class="dashboard-header">
+            <div class="header-left">
+                <a href="/" class="back-btn">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <div class="header-title">
+                    <h1>学情分析看板</h1>
+                    <p id="videoName">选择分析文件查看详细报告</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn-dashboard btn-outline" onclick="refreshData()">
+                    <i class="fas fa-sync-alt"></i>
+                    刷新
+                </button>
+                <button class="btn-dashboard" onclick="downloadReport()">
+                    <i class="fas fa-download"></i>
+                    导出报告
+                </button>
+            </div>
+        </header>
+
+        <!-- 历史记录选择 -->
+        <div class="history-selector">
+            <label for="historySelect">选择历史分析文件：</label>
+            <select id="historySelect" onchange="loadSelectedHistory()">
+                <option value="">-- 请选择文件 --</option>
+            </select>
+        </div>
+
+        <!-- 加载状态 -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">正在加载分析数据...</div>
+        </div>
+
+        <!-- 核心指标 -->
+        <div class="metrics-grid" id="metricsGrid">
+            <div class="metric-card">
+                <div class="metric-icon blue">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div class="metric-label">有效学习率</div>
+                <div class="metric-value" id="effectiveRate">--</div>
+                <div class="metric-trend" id="effectiveTrend">
+                    <i class="fas fa-arrow-up trend-up"></i>
+                    <span>高于平均</span>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon orange">
+                    <i class="fas fa-eye-slash"></i>
+                </div>
+                <div class="metric-label">走神率</div>
+                <div class="metric-value" id="distractionRate">--</div>
+                <div class="metric-trend" id="distractionTrend">
+                    <i class="fas fa-arrow-down trend-down"></i>
+                    <span>需要注意</span>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon red">
+                    <i class="fas fa-moon"></i>
+                </div>
+                <div class="metric-label">困倦率</div>
+                <div class="metric-value" id="drowsinessRate">--</div>
+                <div class="metric-trend" id="drowsinessTrend">
+                    <i class="fas fa-minus trend-neutral"></i>
+                    <span>正常范围</span>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon green">
+                    <i class="fas fa-comments"></i>
+                </div>
+                <div class="metric-label">互动率</div>
+                <div class="metric-value" id="interactionRate">--</div>
+                <div class="metric-trend" id="interactionTrend">
+                    <i class="fas fa-arrow-up trend-up"></i>
+                    <span>积极参与</span>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon purple">
+                    <i class="fas fa-exclamation-circle"></i>
+                </div>
+                <div class="metric-label">违纪率</div>
+                <div class="metric-value" id="misbehaviorRate">--</div>
+                <div class="metric-trend" id="misbehaviorTrend">
+                    <i class="fas fa-check trend-up"></i>
+                    <span>秩序良好</span>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon pink">
+                    <i class="fas fa-chart-bar"></i>
+                </div>
+                <div class="metric-label">注意力衰减</div>
+                <div class="metric-value" id="attentionDecay">--</div>
+                <div class="metric-trend" id="decayTrend">
+                    <i class="fas fa-arrow-down trend-down"></i>
+                    <span>明显衰减</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 图表区域 -->
+        <div class="charts-grid">
+            <!-- 时段对比 -->
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div>
+                        <div class="chart-title">四大授课时段对比</div>
+                        <div class="chart-subtitle">各时段有效学习率分布</div>
+                    </div>
+                </div>
+                <div class="segment-comparison" id="segmentComparison">
+                    <div class="segment-item opening">
+                        <div class="segment-name">开课适应期</div>
+                        <div class="segment-value" id="openingRate">--</div>
+                        <div class="segment-bar">
+                            <div class="segment-bar-fill" style="background: var(--info); width: 0%;" id="openingBar"></div>
+                        </div>
+                    </div>
+                    <div class="segment-item efficient">
+                        <div class="segment-name">高效学习期</div>
+                        <div class="segment-value" id="efficientRate">--</div>
+                        <div class="segment-bar">
+                            <div class="segment-bar-fill" style="background: var(--success); width: 0%;" id="efficientBar"></div>
+                        </div>
+                    </div>
+                    <div class="segment-item fatigue">
+                        <div class="segment-name">疲劳下滑期</div>
+                        <div class="segment-value" id="fatigueRate">--</div>
+                        <div class="segment-bar">
+                            <div class="segment-bar-fill" style="background: var(--warning); width: 0%;" id="fatigueBar"></div>
+                        </div>
+                    </div>
+                    <div class="segment-item closing">
+                        <div class="segment-name">下课涣散期</div>
+                        <div class="segment-value" id="closingRate">--</div>
+                        <div class="segment-bar">
+                            <div class="segment-bar-fill" style="background: var(--danger); width: 0%;" id="closingBar"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 行为分布饼图 -->
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div>
+                        <div class="chart-title">行为分布</div>
+                        <div class="chart-subtitle">各类行为占比统计</div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="pieChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 趋势折线图 -->
+            <div class="chart-card full-width">
+                <div class="chart-header">
+                    <div>
+                        <div class="chart-title">学习状态时序变化</div>
+                        <div class="chart-subtitle">各指标随时间变化趋势</div>
+                    </div>
+                </div>
+                <div class="chart-container tall">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI分析报告 -->
+        <div class="report-section">
+            <div class="report-header">
+                <div class="report-title">
+                    <i class="fas fa-robot" style="color: var(--primary-light); margin-right: 0.5rem;"></i>
+                    AI 课堂学情分析报告
+                </div>
+                <button class="btn-dashboard btn-outline" onclick="regenerateReport()">
+                    <i class="fas fa-redo"></i>
+                    重新生成
+                </button>
+            </div>
+            <div class="report-content" id="reportContent">
+                <div class="report-loader">
+                    <div class="spinner"></div>
+                    <span>正在生成分析报告，请稍候...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let pieChart = null;
+        let trendChart = null;
+        let currentData = null;
+        let currentReport = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadHistoryList();
+        });
+
+        async function loadHistoryList() {
+            try {
+                const response = await fetch('/api/history');
+                const data = await response.json();
+                const select = document.getElementById('historySelect');
+                
+                data.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.filename;
+                    option.textContent = `${item.name} (${item.modified})`;
+                    select.appendChild(option);
+                });
+
+                if (data.length > 0) {
+                    select.value = data[0].filename;
+                    loadSelectedHistory();
+                }
+            } catch (error) {
+                console.error('加载历史记录失败:', error);
+            }
+        }
+
+        async function loadSelectedHistory() {
+            const select = document.getElementById('historySelect');
+            const filename = select.value;
+            
+            if (!filename) return;
+
+            document.getElementById('loadingOverlay').style.display = 'flex';
+            document.getElementById('videoName').textContent = filename.replace('_raw.csv', '');
+
+            try {
+                const response = await fetch(`/api/analyze/${filename}`);
+                const result = await response.json();
+
+                if (result.success) {
+                    currentData = result;
+                    updateDashboard(result);
+                    generateReport(result);
+                }
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                alert('数据加载失败，请重试');
+            } finally {
+                document.getElementById('loadingOverlay').style.display = 'none';
+            }
+        }
+
+        function updateDashboard(data) {
+            const stats = data.stats;
+
+            document.getElementById('effectiveRate').textContent = stats.avg_effective_learning_rate + '%';
+            document.getElementById('distractionRate').textContent = stats.avg_distraction_rate + '%';
+            document.getElementById('drowsinessRate').textContent = stats.avg_drowsiness_rate + '%';
+            document.getElementById('interactionRate').textContent = stats.avg_positive_interaction_rate + '%';
+            document.getElementById('misbehaviorRate').textContent = stats.avg_misbehavior_rate + '%';
+            document.getElementById('attentionDecay').textContent = (stats.attention_decay_rate || 0) + '%';
+
+            updateTrends(stats);
+            updateSegmentComparison(data);
+            updatePieChart(data);
+            updateTrendChart(data);
+        }
+
+        function updateTrends(stats) {
+            const effectiveTrend = document.getElementById('effectiveTrend');
+            if (stats.avg_effective_learning_rate >= 60) {
+                effectiveTrend.innerHTML = '<i class="fas fa-arrow-up trend-up"></i><span>表现优秀</span>';
+            } else if (stats.avg_effective_learning_rate >= 40) {
+                effectiveTrend.innerHTML = '<i class="fas fa-minus trend-neutral"></i><span>一般</span>';
+            } else {
+                effectiveTrend.innerHTML = '<i class="fas fa-arrow-down trend-down"></i><span>需要改善</span>';
+            }
+
+            const distractionTrend = document.getElementById('distractionTrend');
+            if (stats.avg_distraction_rate >= 30) {
+                distractionTrend.innerHTML = '<i class="fas fa-arrow-up trend-down"></i><span>严重走神</span>';
+            } else if (stats.avg_distraction_rate >= 15) {
+                distractionTrend.innerHTML = '<i class="fas fa-exclamation trend-warning"></i><span>需要注意</span>';
+            } else {
+                distractionTrend.innerHTML = '<i class="fas fa-check trend-up"></i><span>正常</span>';
+            }
+        }
+
+        function updateSegmentComparison(data) {
+            const segments = data.segments || {
+                opening: { avg_effective_learning_rate: 0 },
+                efficient: { avg_effective_learning_rate: 0 },
+                fatigue: { avg_effective_learning_rate: 0 },
+                closing: { avg_effective_learning_rate: 0 }
+            };
+
+            const segmentMap = {
+                'opening': { rate: 'openingRate', bar: 'openingBar' },
+                'efficient': { rate: 'efficientRate', bar: 'efficientBar' },
+                'fatigue': { rate: 'fatigueRate', bar: 'fatigueBar' },
+                'closing': { rate: 'closingRate', bar: 'closingBar' }
+            };
+
+            for (const [seg, ids] of Object.entries(segmentMap)) {
+                const rate = segments[seg]?.avg_effective_learning_rate || 0;
+                document.getElementById(ids.rate).textContent = rate + '%';
+                setTimeout(() => {
+                    document.getElementById(ids.bar).style.width = rate + '%';
+                }, 300);
+            }
+        }
+
+        function updatePieChart(data) {
+            const ctx = document.getElementById('pieChart').getContext('2d');
+            
+            if (pieChart) {
+                pieChart.destroy();
+            }
+
+            const behaviorLabels = {
+                'focus_listen': '专注听课',
+                'study_bow': '低头学习',
+                'empty_mind': '放空走神',
+                'sleep_stu': '打瞌睡',
+                'look_side': '侧视',
+                'talk_discuss': '课堂讨论',
+                'talk_private': '私下交谈',
+                'stand_up': '站立',
+                'loose_stu': '松散',
+                'phone_game': '玩手机'
+            };
+
+            const colors = [
+                '#10b981', '#00d4ff', '#f59e0b', '#ef4444', 
+                '#8b5cf6', '#3b82f6', '#ec4899', '#06b6d4',
+                '#84cc16', '#f97316'
+            ];
+
+            const labels = [];
+            const values = [];
+            const bgColors = [];
+
+            let idx = 0;
+            for (const [key, label] of Object.entries(behaviorLabels)) {
+                if (data.stats[key + '_ratio'] > 0) {
+                    labels.push(label);
+                    values.push(data.stats[key + '_ratio']);
+                    bgColors.push(colors[idx % colors.length]);
+                }
+                idx++;
+            }
+
+            pieChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: bgColors,
+                        borderWidth: 0,
+                        hoverOffset: 10
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                color: '#94a3b8',
+                                font: { size: 12 },
+                                padding: 15,
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateTrendChart(data) {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            
+            if (trendChart) {
+                trendChart.destroy();
+            }
+
+            const records = data.data || [];
+            const labels = records.map((_, i) => Math.floor(i * 5 / 60) + ':' + String((i * 5) % 60).padStart(2, '0'));
+            const effectiveData = records.map(r => r.effective_learning_rate || 0);
+            const distractionData = records.map(r => r.distraction_rate || 0);
+            const drowsinessData = records.map(r => r.drowsiness_rate || 0);
+
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '有效学习率',
+                            data: effectiveData,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6
+                        },
+                        {
+                            label: '走神率',
+                            data: distractionData,
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6
+                        },
+                        {
+                            label: '困倦率',
+                            data: drowsinessData,
+                            borderColor: '#ef4444',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                            ticks: { color: '#64748b', maxTicksLimit: 12 }
+                        },
+                        y: {
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                            ticks: { color: '#64748b', callback: v => v + '%' },
+                            min: 0,
+                            max: 100
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#94a3b8', usePointStyle: true }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ctx.dataset.label + ': ' + ctx.raw.toFixed(1) + '%'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function generateReport(data) {
+            const reportContent = document.getElementById('reportContent');
+            reportContent.innerHTML = '<div class="report-loader"><div class="spinner"></div><span>正在生成分析报告，请稍候...</span></div>';
+
+            try {
+                const response = await fetch('/api/generate_report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data.stats)
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentReport = result.report;
+                    reportContent.innerHTML = '<div style="white-space: pre-wrap; line-height: 1.8;">' + result.report + '</div>';
+                } else {
+                    reportContent.innerHTML = '<p style="color: #ef4444;">报告生成失败: ' + result.error + '</p>';
+                }
+            } catch (error) {
+                console.error('生成报告失败:', error);
+                reportContent.innerHTML = '<p style="color: #ef4444;">报告生成失败，请稍后重试</p>';
+            }
+        }
+
+        async function regenerateReport() {
+            if (currentData) {
+                generateReport(currentData);
+            }
+        }
+
+        function refreshData() {
+            loadSelectedHistory();
+        }
+
+        function downloadReport() {
+            if (!currentReport) {
+                alert('请先加载数据并生成报告');
+                return;
+            }
+
+            const blob = new Blob([currentReport], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '学情分析报告_' + new Date().toISOString().slice(0, 10) + '.txt';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
