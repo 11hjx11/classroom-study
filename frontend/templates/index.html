@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClassVision - 课堂专注度智能分析系统</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- 背景动画 -->
+    <div class="bg-animation">
+        <div class="bg-orb bg-orb-1"></div>
+        <div class="bg-orb bg-orb-2"></div>
+        <div class="bg-orb bg-orb-3"></div>
+    </div>
+
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#" class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 6v6l4 2"/>
+                    </svg>
+                </div>
+                <div class="logo-text">
+                    <span class="logo-main">ClassVision</span>
+                    <span class="logo-sub">智能课堂分析系统</span>
+                </div>
+            </a>
+            <div class="nav-links">
+                <a href="#home" class="nav-link active">
+                    <i class="fas fa-home"></i>
+                    <span>首页</span>
+                </a>
+                <a href="#analyze" class="nav-link">
+                    <i class="fas fa-play-circle"></i>
+                    <span>开始分析</span>
+                </a>
+                <a href="#history" class="nav-link">
+                    <i class="fas fa-history"></i>
+                    <span>历史记录</span>
+                </a>
+                <a href="#about" class="nav-link">
+                    <i class="fas fa-info-circle"></i>
+                    <span>关于</span>
+                </a>
+                <a href="#project" class="nav-link">
+                    <i class="fas fa-book"></i>
+                    <span>项目介绍</span>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 英雄区域 -->
+    <section id="home" class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <div class="hero-badge">
+                    <span class="badge-dot"></span>
+                    AI 驱动的课堂分析解决方案
+                </div>
+                <h1 class="hero-title">
+                    智能分析<br>
+                    <span class="gradient-text">学生课堂专注度</span>
+                </h1>
+                <p class="hero-desc">
+                    基于深度学习的头部姿态估计与行为识别技术，
+                    自动分析课堂中学生专注状态，生成可视化报告。
+                </p>
+                <div class="hero-actions">
+                    <a href="#analyze" class="btn btn-primary">
+                        <i class="fas fa-rocket"></i>
+                        立即体验
+                    </a>
+                    <a href="#project" class="btn btn-ghost">
+                        了解更多
+                        <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="hero-card">
+                    <div class="hero-card-header">
+                        <div class="card-dots">
+                            <span></span><span></span><span></span>
+                        </div>
+                        <span class="card-title">实时分析</span>
+                    </div>
+                    <div class="hero-card-body">
+                        <div class="mini-stats">
+                            <div class="mini-stat">
+                                <span class="mini-stat-value" id="miniFocus">87%</span>
+                                <span class="mini-stat-label">专注度</span>
+                            </div>
+                            <div class="mini-stat">
+                                <span class="mini-stat-value" id="miniStudents">24</span>
+                                <span class="mini-stat-label">学生数</span>
+                            </div>
+                        </div>
+                        <div class="mini-chart">
+                            <div class="chart-line"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 项目介绍 -->
+    <section id="project" class="project-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">项目文档</span>
+                <h2>项目介绍</h2>
+                <p>ClassVision - 课堂专注度智能分析系统</p>
+            </div>
+            <div class="project-content">
+                <div class="project-card">
+                    <h3><i class="fas fa-eye"></i> 项目简介</h3>
+                    <p>ClassVision 是一个基于深度学习的课堂专注度智能分析系统，通过计算机视觉技术自动分析课堂中学生的专注状态。</p>
+                </div>
+                <div class="project-card">
+                    <h3><i class="fas fa-cogs"></i> 核心功能</h3>
+                    <ul>
+                        <li>智能抽帧：从视频中自动均匀抽取关键帧</li>
+                        <li>人脸检测：基于 YOLOv8 的高精度人脸检测</li>
+                        <li>姿态估计：MediaPipe Face Mesh 分析头部姿态</li>
+                        <li>行为识别：智能识别 10 种课堂行为状态</li>
+                        <li>报告导出：支持 CSV 格式数据导出</li>
+                    </ul>
+                </div>
+                <div class="project-card">
+                    <h3><i class="fas fa-code"></i> 技术栈</h3>
+                    <ul>
+                        <li><strong>前端</strong>：HTML5 + CSS3 + JavaScript</li>
+                        <li><strong>后端</strong>：Flask (Python Web Framework)</li>
+                        <li><strong>深度学习</strong>：YOLOv8, MediaPipe, TensorFlow/PyTorch</li>
+                        <li><strong>数据处理</strong>：Pandas, NumPy</li>
+                    </ul>
+                </div>
+                <div class="project-card">
+                    <h3><i class="fas fa-play"></i> 快速开始</h3>
+                    <pre><code># 克隆项目
+git clone https://github.com/your-repo/classvision.git
+cd classvision
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 运行服务
+python app.py
+
+# 访问 http://localhost:5000</code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 功能介绍 -->
+    <section class="features" id="about">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">核心能力</span>
+                <h2>为什么选择 ClassVision</h2>
+                <p>融合计算机视觉与深度学习，提供全方位的课堂分析能力</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-video"></i>
+                    </div>
+                    <h3>智能抽帧</h3>
+                    <p>自动从视频中均匀抽取关键帧，3秒间隔，平衡精度与效率</p>
+                    <div class="feature-tag">高效采样</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-user-check"></i>
+                    </div>
+                    <h3>人脸检测</h3>
+                    <p>基于YOLOv8的高精度人脸检测，实时追踪每位学生</p>
+                    <div class="feature-tag">YOLOv8</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-eye"></i>
+                    </div>
+                    <h3>姿态估计</h3>
+                    <p>MediaPipe Face Mesh精准分析头部偏转角度与俯仰角度</p>
+                    <div class="feature-tag">MediaPipe</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-brain"></i>
+                    </div>
+                    <h3>行为识别</h3>
+                    <p>智能识别10种课堂行为状态，包括专注、走神、瞌睡等</p>
+                    <div class="feature-tag">10+ 行为</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-shield-alt"></i>
+                    </div>
+                    <h3>数据校验</h3>
+                    <p>自动校验分析结果，确保行为分类数据准确可靠</p>
+                    <div class="feature-tag">智能校验</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-file-export"></i>
+                    </div>
+                    <h3>报告导出</h3>
+                    <p>支持CSV格式导出，便于后续数据处理与学术研究</p>
+                    <div class="feature-tag">数据导出</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 分析区域 -->
+    <section id="analyze" class="analyze-section">
+        <div class="container">
+            <div class="analyze-wrapper">
+                <!-- 上传卡片 -->
+                <div class="upload-panel">
+                    <div class="panel-header">
+                        <h3>上传视频文件</h3>
+                        <p>支持 MP4、AVI 格式</p>
+                    </div>
+                    
+                    <div class="upload-zone" id="uploadZone">
+                        <input type="file" id="videoInput" accept="video/*" hidden>
+                        <div class="upload-content">
+                            <div class="upload-icon-wrap">
+                                <div class="upload-icon">
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                </div>
+                                <div class="upload-progress-ring">
+                                    <svg viewBox="0 0 100 100">
+                                        <circle cx="50" cy="50" r="45" stroke-dasharray="283" stroke-dashoffset="283"/>
+                                    </svg>
+                                </div>
+                            </div>
+                            <p class="upload-text">拖拽视频到此处</p>
+                            <p class="upload-hint">或点击选择文件</p>
+                            <button class="btn btn-upload" id="selectBtn">
+                                <i class="fas fa-folder-open"></i>
+                                浏览文件
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="upload-status" id="uploadStatus">
+                        <div class="status-info">
+                            <i class="fas fa-check-circle"></i>
+                            <span id="statusText">上传成功</span>
+                        </div>
+                        <span class="status-filename" id="statusFilename"></span>
+                    </div>
+                </div>
+
+                <!-- 配置卡片 -->
+                <div class="config-panel">
+                    <div class="panel-header">
+                        <h3>分析配置</h3>
+                        <p>自动优化的参数设置</p>
+                    </div>
+                    <div class="config-list">
+                        <div class="config-item">
+                            <div class="config-icon">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="config-info">
+                                <span class="config-label">抽帧间隔</span>
+                                <span class="config-value">3 秒</span>
+                            </div>
+                        </div>
+                        <div class="config-item">
+                            <div class="config-icon">
+                                <i class="fas fa-check-double"></i>
+                            </div>
+                            <div class="config-info">
+                                <span class="config-label">有效帧检测</span>
+                                <span class="config-value status-active">已启用</span>
+                            </div>
+                        </div>
+                        <div class="config-item">
+                            <div class="config-icon">
+                                <i class="fas fa-balance-scale"></i>
+                            </div>
+                            <div class="config-info">
+                                <span class="config-label">数据校验</span>
+                                <span class="config-value status-active">已启用</span>
+                            </div>
+                        </div>
+                        <div class="config-item">
+                            <div class="config-icon">
+                                <i class="fas fa-chart-bar"></i>
+                            </div>
+                            <div class="config-info">
+                                <span class="config-label">行为分类</span>
+                                <span class="config-value">10 种</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 进度条 -->
+            <div class="progress-panel hidden" id="progressPanel">
+                <div class="progress-header">
+                    <div class="progress-info">
+                        <span class="progress-title">正在分析...</span>
+                        <span class="progress-file" id="progressFile"></span>
+                    </div>
+                    <span class="progress-percent" id="progressPercent">0%</span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                <div class="progress-steps">
+                    <div class="step active" id="stepUpload">
+                        <div class="step-icon"><i class="fas fa-upload"></i></div>
+                        <span>上传</span>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" id="stepDetect">
+                        <div class="step-icon"><i class="fas fa-search"></i></div>
+                        <span>检测</span>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" id="stepAnalyze">
+                        <div class="step-icon"><i class="fas fa-brain"></i></div>
+                        <span>分析</span>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" id="stepDone">
+                        <div class="step-icon"><i class="fas fa-check"></i></div>
+                        <span>完成</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 结果区域 -->
+    <section id="results" class="results-section hidden">
+        <div class="container">
+            <div class="results-header">
+                <div class="results-title">
+                    <h2>分析报告</h2>
+                    <p id="resultVideoName">classroom.mp4</p>
+                </div>
+                <button class="btn btn-outline" id="downloadBtn">
+                    <i class="fas fa-download"></i>
+                    下载CSV
+                </button>
+            </div>
+
+            <!-- 概览卡片 -->
+            <div class="overview-cards">
+                <div class="overview-card">
+                    <div class="overview-icon blue">
+                        <i class="fas fa-film"></i>
+                    </div>
+                    <div class="overview-content">
+                        <span class="overview-value" id="resTotalFrames">-</span>
+                        <span class="overview-label">处理帧数</span>
+                    </div>
+                    <div class="overview-trend up">
+                        <span id="resValidFrames">-</span>
+                        <span>有效帧</span>
+                    </div>
+                </div>
+                <div class="overview-card">
+                    <div class="overview-icon purple">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div class="overview-content">
+                        <span class="overview-value" id="resTotalStudents">-</span>
+                        <span class="overview-label">检测人次</span>
+                    </div>
+                    <div class="overview-trend">
+                        <span id="resAvgStudents">-</span>
+                        <span>平均/帧</span>
+                    </div>
+                </div>
+                <div class="overview-card highlight">
+                    <div class="overview-icon green">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="overview-content">
+                        <span class="overview-value" id="resEngagement">-</span>
+                        <span class="overview-label">课堂参与度</span>
+                    </div>
+                    <div class="overview-glow"></div>
+                </div>
+                <div class="overview-card">
+                    <div class="overview-icon orange">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="overview-content">
+                        <span class="overview-value" id="resDistraction">-</span>
+                        <span class="overview-label">分心率</span>
+                    </div>
+                    <div class="overview-trend down">
+                        <span id="resSleepCount">-</span>
+                        <span>瞌睡人数</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 行为分布 -->
+            <div class="results-grid">
+                <div class="result-card chart-card">
+                    <div class="card-header">
+                        <h3>行为分布</h3>
+                        <span class="card-subtitle">各类行为占比</span>
+                    </div>
+                    <div class="chart-content">
+                        <div class="pie-chart" id="pieChart">
+                            <canvas id="pieCanvas"></canvas>
+                            <div class="pie-center">
+                                <span class="pie-total" id="pieTotal">100</span>
+                                <span class="pie-label">人次</span>
+                            </div>
+                        </div>
+                        <div class="chart-legend" id="chartLegend"></div>
+                    </div>
+                </div>
+
+                <div class="result-card behavior-card">
+                    <div class="card-header">
+                        <h3>行为统计</h3>
+                        <span class="card-subtitle">详细数据</span>
+                    </div>
+                    <div class="behavior-list" id="behaviorList"></div>
+                </div>
+            </div>
+
+            <!-- 数据表格 -->
+            <div class="result-card table-card">
+                <div class="card-header">
+                    <h3>帧数据详情</h3>
+                    <span class="card-subtitle">每帧详细分析结果</span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>帧号</th>
+                                <th>状态</th>
+                                <th>总人数</th>
+                                <th>专注</th>
+                                <th>低头</th>
+                                <th>走神</th>
+                                <th>瞌睡</th>
+                                <th>站立</th>
+                                <th>侧视</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 历史记录 -->
+    <section id="history" class="history-section hidden">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">数据管理</span>
+                <h2>历史记录</h2>
+                <p>查看和管理过往的分析记录</p>
+            </div>
+            <div class="history-grid" id="historyGrid">
+                <div class="empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <p>暂无历史记录</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 页脚 -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <div class="logo-icon small">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 6v6l4 2"/>
+                        </svg>
+                    </div>
+                    <span>ClassVision</span>
+                </div>
+                <p class="footer-copy">基于深度学习的课堂专注度分析系统 &copy; 2024</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 加载动画 -->
+    <div class="loader-overlay hidden" id="loaderOverlay">
+        <div class="loader">
+            <div class="loader-spinner">
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring"></div>
+            </div>
+            <p>正在处理视频...</p>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
