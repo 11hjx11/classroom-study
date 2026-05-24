@@ -159,7 +159,7 @@ class MetricsCalculator:
         
         segment_metrics = {}
         segments = ['opening', 'efficient', 'fatigue', 'closing']
-        segment_names = ['开课适应期', '高效学习期', '学习疲劳期', '下课涣散期']
+        segment_names = ['上课初期', '上课关键期', '疲劳期', '临近下课期']
         
         for segment_id, segment_name in zip(segments, segment_names):
             segment_data = df[df['segment'] == segment_id]

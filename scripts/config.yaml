@@ -4,7 +4,7 @@ video:
 
 sampling:
   frame_interval_sec: 3
-  max_frames: 500
+  max_frames: 1000
 
 detection:
   model: "yolov8n.pt"

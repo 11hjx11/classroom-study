@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ClassVision - 课堂专注度智能分析系统</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='lib/font-awesome.min.css') }}">
+    <script src="{{ url_for('static', filename='lib/chart.umd.min.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -40,9 +41,9 @@
                     <i class="fas fa-play-circle"></i>
                     <span>开始分析</span>
                 </a>
-                <a href="/dashboard" class="nav-link">
-                    <i class="fas fa-chart-dashboard"></i>
-                    <span>数据看板</span>
+                <a href="#dashboard" class="nav-link">
+                    <i class="fas fa-chart-bar"></i>
+                    <span>数据分析</span>
                 </a>
                 <a href="#history" class="nav-link">
                     <i class="fas fa-history"></i>
@@ -226,6 +227,158 @@ python app.py
         </div>
     </section>
 
+    <!-- 数据看板板块 -->
+    <section id="dashboard" class="dashboard-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">实时监控</span>
+                <h2>数据看板</h2>
+                <p>课堂专注度实时分析数据概览</p>
+            </div>
+
+            <!-- 核心指标卡片 -->
+            <div class="dashboard-metrics">
+                <div class="metric-card">
+                    <div class="metric-icon blue">
+                        <i class="fas fa-video"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-value" id="dashTotalFrames">-</span>
+                        <span class="metric-label">分析帧数</span>
+                    </div>
+                    <div class="metric-trend">
+                        <i class="fas fa-check-circle"></i>
+                        <span id="dashValidFrames">-</span> 有效帧
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon purple">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-value" id="dashTotalStudents">-</span>
+                        <span class="metric-label">检测人次</span>
+                    </div>
+                    <div class="metric-trend">
+                        <i class="fas fa-chart-line"></i>
+                        <span id="dashAvgStudents">-</span> 平均/帧
+                    </div>
+                </div>
+                <div class="metric-card highlight">
+                    <div class="metric-icon green">
+                        <i class="fas fa-brain"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-value" id="dashEngagement">0%</span>
+                        <span class="metric-label">课堂参与度</span>
+                    </div>
+                    <div class="metric-glow"></div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon orange">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-value" id="dashDistraction">0%</span>
+                        <span class="metric-label">分心率</span>
+                    </div>
+                    <div class="metric-trend warning">
+                        <i class="fas fa-bed"></i>
+                        <span id="dashSleepCount">-</span> 瞌睡人数
+                    </div>
+                </div>
+            </div>
+
+            <!-- 图表区域 -->
+            <div class="dashboard-charts">
+                <!-- 饼图 -->
+                <div class="chart-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-pie"></i> 行为分布</h3>
+                        <span class="card-subtitle">各类行为占比分析</span>
+                    </div>
+                    <div class="chart-body">
+                        <div class="pie-container">
+                            <canvas id="dashPieCanvas"></canvas>
+                            <div class="pie-center">
+                                <span class="pie-total" id="dashPieTotal">-</span>
+                                <span class="pie-label">人次</span>
+                            </div>
+                        </div>
+                        <div class="chart-legend" id="dashChartLegend">
+                            <div class="legend-empty">暂无数据，请上传视频分析</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 行为统计列表 -->
+                <div class="chart-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-list-ol"></i> 行为统计</h3>
+                        <span class="card-subtitle">详细行为数据</span>
+                    </div>
+                    <div class="chart-body">
+                        <div class="behavior-list" id="dashBehaviorList">
+                            <div class="behavior-item">
+                                <div class="behavior-color" style="background: #00d4ff"></div>
+                                <span class="behavior-name">专注听讲</span>
+                                <span class="behavior-count">-</span>
+                                <span class="behavior-percent">-%</span>
+                            </div>
+                            <div class="behavior-item">
+                                <div class="behavior-color" style="background: #10b981"></div>
+                                <span class="behavior-name">低头学习</span>
+                                <span class="behavior-count">-</span>
+                                <span class="behavior-percent">-%</span>
+                            </div>
+                            <div class="behavior-item">
+                                <div class="behavior-color" style="background: #f59e0b"></div>
+                                <span class="behavior-name">走神发呆</span>
+                                <span class="behavior-count">-</span>
+                                <span class="behavior-percent">-%</span>
+                            </div>
+                            <div class="behavior-item">
+                                <div class="behavior-color" style="background: #ef4444"></div>
+                                <span class="behavior-name">打瞌睡</span>
+                                <span class="behavior-count">-</span>
+                                <span class="behavior-percent">-%</span>
+                            </div>
+                            <div class="behavior-item">
+                                <div class="behavior-color" style="background: #8b5cf6"></div>
+                                <span class="behavior-name">侧身观望</span>
+                                <span class="behavior-count">-</span>
+                                <span class="behavior-percent">-%</span>
+                            </div>
+                            <div class="behavior-item">
+                                <div class="behavior-color" style="background: #14b8a6"></div>
+                                <span class="behavior-name">站立</span>
+                                <span class="behavior-count">-</span>
+                                <span class="behavior-percent">-%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 趋势图 -->
+            <div class="dashboard-trend">
+                <div class="trend-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-area"></i> 专注度趋势</h3>
+                        <span class="card-subtitle">课堂各时段专注度变化</span>
+                    </div>
+                    <div class="trend-body">
+                        <div class="trend-placeholder" id="dashTrendPlaceholder">
+                            <i class="fas fa-chart-area"></i>
+                            <p>上传视频后将显示专注度趋势图</p>
+                        </div>
+                        <canvas id="dashTrendCanvas" class="hidden"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- 分析区域 -->
     <section id="analyze" class="analyze-section">
         <div class="container">
@@ -343,6 +496,11 @@ python app.py
                         <span>分析</span>
                     </div>
                     <div class="step-line"></div>
+                    <div class="step" id="stepReport">
+                        <div class="step-icon"><i class="fas fa-file-text"></i></div>
+                        <span>报告</span>
+                    </div>
+                    <div class="step-line"></div>
                     <div class="step" id="stepDone">
                         <div class="step-icon"><i class="fas fa-check"></i></div>
                         <span>完成</span>
@@ -355,122 +513,385 @@ python app.py
     <!-- 结果区域 -->
     <section id="results" class="results-section hidden">
         <div class="container">
+            <!-- 页面标题 -->
             <div class="results-header">
                 <div class="results-title">
-                    <h2>分析报告</h2>
+                    <h2>课堂学情分析报告</h2>
                     <p id="resultVideoName">classroom.mp4</p>
                 </div>
                 <button class="btn btn-outline" id="downloadBtn">
                     <i class="fas fa-download"></i>
-                    下载CSV
+                    下载报告
                 </button>
             </div>
 
-            <!-- 概览卡片 -->
-            <div class="overview-cards">
-                <div class="overview-card">
-                    <div class="overview-icon blue">
-                        <i class="fas fa-film"></i>
+            <!-- ========== 核心指标板块 ========== -->
+            <div class="core-metrics-section">
+                <div class="section-header">
+                    <div class="section-icon">
+                        <i class="fas fa-tachometer-alt"></i>
                     </div>
-                    <div class="overview-content">
-                        <span class="overview-value" id="resTotalFrames">-</span>
-                        <span class="overview-label">处理帧数</span>
-                    </div>
-                    <div class="overview-trend up">
-                        <span id="resValidFrames">-</span>
-                        <span>有效帧</span>
+                    <div class="section-title-group">
+                        <h3>核心指标</h3>
+                        <p>关键学情数值概览</p>
                     </div>
                 </div>
-                <div class="overview-card">
-                    <div class="overview-icon purple">
-                        <i class="fas fa-users"></i>
-                    </div>
-                    <div class="overview-content">
-                        <span class="overview-value" id="resTotalStudents">-</span>
-                        <span class="overview-label">检测人次</span>
-                    </div>
-                    <div class="overview-trend">
-                        <span id="resAvgStudents">-</span>
-                        <span>平均/帧</span>
-                    </div>
-                </div>
-                <div class="overview-card highlight">
-                    <div class="overview-icon green">
-                        <i class="fas fa-chart-line"></i>
-                    </div>
-                    <div class="overview-content">
-                        <span class="overview-value" id="resEngagement">-</span>
-                        <span class="overview-label">课堂参与度</span>
-                    </div>
-                    <div class="overview-glow"></div>
-                </div>
-                <div class="overview-card">
-                    <div class="overview-icon orange">
-                        <i class="fas fa-exclamation-triangle"></i>
-                    </div>
-                    <div class="overview-content">
-                        <span class="overview-value" id="resDistraction">-</span>
-                        <span class="overview-label">分心率</span>
-                    </div>
-                    <div class="overview-trend down">
-                        <span id="resSleepCount">-</span>
-                        <span>瞌睡人数</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 行为分布 -->
-            <div class="results-grid">
-                <div class="result-card chart-card">
-                    <div class="card-header">
-                        <h3>行为分布</h3>
-                        <span class="card-subtitle">各类行为占比</span>
-                    </div>
-                    <div class="chart-content">
-                        <div class="pie-chart" id="pieChart">
-                            <canvas id="pieCanvas"></canvas>
-                            <div class="pie-center">
-                                <span class="pie-total" id="pieTotal">100</span>
-                                <span class="pie-label">人次</span>
+                <div class="core-metrics-grid">
+                    <!-- 课堂参与度 -->
+                    <div class="metric-card primary-card">
+                        <div class="metric-header">
+                            <div class="metric-icon" style="background: linear-gradient(135deg, #00d4ff, #7c3aed);">
+                                <i class="fas fa-brain"></i>
+                            </div>
+                            <div class="metric-badge positive">高效</div>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">课堂参与度</span>
+                            <div class="metric-value-row">
+                                <span class="metric-value" id="metricEngagement">0</span>
+                                <span class="metric-unit">%</span>
+                            </div>
+                            <div class="metric-progress">
+                                <div class="progress-fill" id="metricEngagementBar"></div>
                             </div>
                         </div>
-                        <div class="chart-legend" id="chartLegend"></div>
                     </div>
-                </div>
 
-                <div class="result-card behavior-card">
-                    <div class="card-header">
-                        <h3>行为统计</h3>
-                        <span class="card-subtitle">详细数据</span>
+                    <!-- 平均检测人数 -->
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <div class="metric-icon" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
+                                <i class="fas fa-users"></i>
+                            </div>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">平均检测人数</span>
+                            <div class="metric-value-row">
+                                <span class="metric-value" id="metricAvgStudents">0</span>
+                                <span class="metric-unit">人/帧</span>
+                            </div>
+                            <span class="metric-detail">总检测人次: <span id="metricTotalStudents">-</span></span>
+                        </div>
                     </div>
-                    <div class="behavior-list" id="behaviorList"></div>
+
+                    <!-- 分心率 -->
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <div class="metric-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
+                                <i class="fas fa-exclamation-circle"></i>
+                            </div>
+                            <div class="metric-badge warning">关注</div>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">分心率</span>
+                            <div class="metric-value-row">
+                                <span class="metric-value" id="metricDistraction">0</span>
+                                <span class="metric-unit">%</span>
+                            </div>
+                            <div class="metric-progress warning">
+                                <div class="progress-fill" id="metricDistractionBar"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 分析帧数 -->
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <div class="metric-icon" style="background: rgba(0, 212, 255, 0.15); color: #00d4ff;">
+                                <i class="fas fa-film"></i>
+                            </div>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">分析帧数</span>
+                            <div class="metric-value-row">
+                                <span class="metric-value" id="metricFrames">0</span>
+                                <span class="metric-unit">帧</span>
+                            </div>
+                            <span class="metric-detail">有效帧: <span id="metricValidFrames">-</span></span>
+                        </div>
+                    </div>
+
+                    <!-- 注意力衰减 -->
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <div class="metric-icon" style="background: rgba(239, 68, 68, 0.15); color: #ef4444;">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="metric-badge danger">警告</div>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">注意力衰减</span>
+                            <div class="metric-value-row">
+                                <span class="metric-value" id="metricDecay">0</span>
+                                <span class="metric-unit">%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 课堂评级 -->
+                    <div class="metric-card grade-card">
+                        <div class="metric-header">
+                            <div class="metric-icon" style="background: rgba(124, 58, 237, 0.15); color: #7c3aed;">
+                                <i class="fas fa-award"></i>
+                            </div>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">课堂评级</span>
+                            <div class="metric-value-row grade">
+                                <span class="metric-value" id="metricGrade">待评估</span>
+                            </div>
+                            <span class="metric-detail">综合得分: <span id="metricScore">0</span>分</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 数据表格 -->
-            <div class="result-card table-card">
-                <div class="card-header">
-                    <h3>帧数据详情</h3>
-                    <span class="card-subtitle">每帧详细分析结果</span>
+            <!-- ========== 时序趋势图 ========== -->
+            <div class="chart-section">
+                <div class="section-header">
+                    <div class="section-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="section-title-group">
+                        <h3>时序趋势</h3>
+                        <p>课堂状态动态变化</p>
+                    </div>
                 </div>
-                <div class="table-wrapper">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>时间</th>
-                                <th>帧号</th>
-                                <th>状态</th>
-                                <th>总人数</th>
-                                <th>专注</th>
-                                <th>低头</th>
-                                <th>走神</th>
-                                <th>瞌睡</th>
-                                <th>站立</th>
-                                <th>侧视</th>
-                            </tr>
-                        </thead>
-                        <tbody id="dataTableBody"></tbody>
-                    </table>
+                <div class="chart-container large" style="height: 150px;">
+                    <div class="chart-header">
+                        <div class="chart-tabs">
+                            <button class="chart-tab active" data-chart-type="learning">有效学习率</button>
+                            <button class="chart-tab" data-chart-type="distraction">分心率</button>
+                        </div>
+                    </div>
+                    <canvas id="trendChart" style="height: 100%;"></canvas>
+                </div>
+            </div>
+
+            <!-- ========== 行为结构与时段对比 ========== -->
+            <div class="chart-row">
+                <!-- 行为结构饼图 -->
+                <div class="chart-section">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fas fa-chart-pie"></i>
+                        </div>
+                        <div class="section-title-group">
+                            <h3>行为结构</h3>
+                            <p>各类行为占比分布</p>
+                        </div>
+                    </div>
+                    <div class="chart-container" style="height: 150px;">
+                        <div class="pie-chart-area">
+                            <canvas id="behaviorPieChart" style="height: 100%;"></canvas>
+                            <div class="pie-center">
+                                <span class="pie-value" id="behaviorPieTotal">0</span>
+                                <span class="pie-label">总人次</span>
+                            </div>
+                        </div>
+                        <div class="chart-legend" id="behaviorLegend"></div>
+                    </div>
+                </div>
+
+                <!-- 时段对比柱状图 -->
+                <div class="chart-section">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fas fa-bar-chart"></i>
+                        </div>
+                        <div class="section-title-group">
+                            <h3>时段对比</h3>
+                            <p>四大授课阶段学情差异</p>
+                        </div>
+                    </div>
+                    <div class="chart-container" style="height: 150px;">
+                        <canvas id="segmentBarChart" style="height: 100%;"></canvas>
+                        <div class="chart-legend" id="segmentLegend"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== 行为统计详情 ========== -->
+            <div class="chart-section">
+                <div class="section-header">
+                    <div class="section-icon">
+                        <i class="fas fa-list-ol"></i>
+                    </div>
+                    <div class="section-title-group">
+                        <h3>行为统计详情</h3>
+                        <p>各类行为详细数据统计</p>
+                    </div>
+                </div>
+                <div class="behavior-stats-grid" id="behaviorStatsGrid">
+                    <div class="behavior-stat-card" style="--stat-color: #00d4ff;">
+                        <div class="stat-icon"></div>
+                        <span class="stat-name">专注听讲</span>
+                        <div class="stat-values">
+                            <span class="stat-count" id="statFocusListen">-</span>
+                            <span class="stat-percent" id="statFocusListenRatio">-%</span>
+                        </div>
+                    </div>
+                    <div class="behavior-stat-card" style="--stat-color: #10b981;">
+                        <div class="stat-icon"></div>
+                        <span class="stat-name">低头学习</span>
+                        <div class="stat-values">
+                            <span class="stat-count" id="statStudyBow">-</span>
+                            <span class="stat-percent" id="statStudyBowRatio">-%</span>
+                        </div>
+                    </div>
+                    <div class="behavior-stat-card" style="--stat-color: #f59e0b;">
+                        <div class="stat-icon"></div>
+                        <span class="stat-name">走神发呆</span>
+                        <div class="stat-values">
+                            <span class="stat-count" id="statEmptyMind">-</span>
+                            <span class="stat-percent" id="statEmptyMindRatio">-%</span>
+                        </div>
+                    </div>
+                    <div class="behavior-stat-card" style="--stat-color: #ef4444;">
+                        <div class="stat-icon"></div>
+                        <span class="stat-name">打瞌睡</span>
+                        <div class="stat-values">
+                            <span class="stat-count" id="statSleep">-</span>
+                            <span class="stat-percent" id="statSleepRatio">-%</span>
+                        </div>
+                    </div>
+                    <div class="behavior-stat-card" style="--stat-color: #8b5cf6;">
+                        <div class="stat-icon"></div>
+                        <span class="stat-name">侧身观望</span>
+                        <div class="stat-values">
+                            <span class="stat-count" id="statLookSide">-</span>
+                            <span class="stat-percent" id="statLookSideRatio">-%</span>
+                        </div>
+                    </div>
+                    <div class="behavior-stat-card" style="--stat-color: #06b6d4;">
+                        <div class="stat-icon"></div>
+                        <span class="stat-name">小组讨论</span>
+                        <div class="stat-values">
+                            <span class="stat-count" id="statTalkDiscuss">-</span>
+                            <span class="stat-percent" id="statTalkDiscussRatio">-%</span>
+                        </div>
+                    </div>
+                    <div class="behavior-stat-card" style="--stat-color: #f97316;">
+                        <div class="stat-icon"></div>
+                        <span class="stat-name">私下交谈</span>
+                        <div class="stat-values">
+                            <span class="stat-count" id="statTalkPrivate">-</span>
+                            <span class="stat-percent" id="statTalkPrivateRatio">-%</span>
+                        </div>
+                    </div>
+                    <div class="behavior-stat-card" style="--stat-color: #14b8a6;">
+                        <div class="stat-icon"></div>
+                        <span class="stat-name">站立</span>
+                        <div class="stat-values">
+                            <span class="stat-count" id="statStandUp">-</span>
+                            <span class="stat-percent" id="statStandUpRatio">-%</span>
+                        </div>
+                    </div>
+                    <div class="behavior-stat-card" style="--stat-color: #ec4899;">
+                        <div class="stat-icon"></div>
+                        <span class="stat-name">走神分心</span>
+                        <div class="stat-values">
+                            <span class="stat-count" id="statLoose">-</span>
+                            <span class="stat-percent" id="statLooseRatio">-%</span>
+                        </div>
+                    </div>
+                    <div class="behavior-stat-card" style="--stat-color: #a855f7;">
+                        <div class="stat-icon"></div>
+                        <span class="stat-name">使用手机</span>
+                        <div class="stat-values">
+                            <span class="stat-count" id="statPhone">-</span>
+                            <span class="stat-percent" id="statPhoneRatio">-%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== AI分析报告 ========== -->
+            <div class="report-section">
+                <div class="section-header">
+                    <div class="section-icon">
+                        <i class="fas fa-file-alt"></i>
+                    </div>
+                    <div class="section-title-group">
+                        <h3>AI分析报告</h3>
+                        <p>基于大语言模型生成的课堂分析总结</p>
+                    </div>
+                </div>
+                <div class="report-card">
+                    <div class="report-body" id="reportContent">
+                        <div class="report-placeholder">
+                            <i class="fas fa-file-text"></i>
+                            <p>分析报告生成中...</p>
+                            <p class="placeholder-hint">AI分析报告将在完成数据分析后自动生成</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== 综合评级与优化建议 ========== -->
+            <div class="final-section">
+                <div class="summary-card">
+                    <div class="summary-header">
+                        <div class="summary-icon">
+                            <i class="fas fa-chart-bar"></i>
+                        </div>
+                        <h3>课堂综合分析结论</h3>
+                    </div>
+                    <div class="summary-content">
+                        <div class="summary-stats">
+                            <div class="summary-stat">
+                                <span class="summary-label">整体表现</span>
+                                <span class="summary-value" id="summaryGrade">待评估</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span class="summary-label">综合得分</span>
+                                <span class="summary-value score" id="summaryScore">0</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span class="summary-label">有效学习率</span>
+                                <span class="summary-value" id="summaryLearningRate">0%</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span class="summary-label">课堂稳定性</span>
+                                <span class="summary-value" id="summaryStability">待评估</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="suggestion-card-container">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fas fa-lightbulb"></i>
+                        </div>
+                        <div class="section-title-group">
+                            <h3>教学优化建议</h3>
+                            <p>基于分析结果的针对性改进建议</p>
+                        </div>
+                    </div>
+                    <div class="suggestion-card" id="suggestionContent">
+                        <div class="suggestion-item">
+                            <div class="suggestion-icon">1</div>
+                            <div class="suggestion-body">
+                                <h4>上课初期优化</h4>
+                                <p>在课堂开始阶段增加互动环节，快速吸引学生注意力，提升上课初期的专注度。</p>
+                            </div>
+                        </div>
+                        <div class="suggestion-item">
+                            <div class="suggestion-icon">2</div>
+                            <div class="suggestion-body">
+                                <h4>疲劳期干预</h4>
+                                <p>在疲劳期安排短暂休息或趣味互动，缓解学生疲劳，维持学习状态。</p>
+                            </div>
+                        </div>
+                        <div class="suggestion-item">
+                            <div class="suggestion-icon">3</div>
+                            <div class="suggestion-body">
+                                <h4>课堂节奏调整</h4>
+                                <p>根据注意力峰值和低谷时段，合理安排教学内容和互动环节。</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

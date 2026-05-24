@@ -23,10 +23,10 @@ class TemporalAnalyzer:
         
         # 时段定义（基于45分钟课堂）
         self.segment_config = {
-            'opening': {'name': '开课适应期', 'start': 0, 'end': 9, 'color': '#00d4ff'},
-            'efficient': {'name': '高效学习期', 'start': 9, 'end': 27, 'color': '#10b981'},
-            'fatigue': {'name': '疲劳下滑期', 'start': 27, 'end': 36, 'color': '#f59e0b'},
-            'closing': {'name': '下课涣散期', 'start': 36, 'end': 45, 'color': '#ef4444'}
+            'opening': {'name': '上课初期', 'start': 0, 'end': 9, 'color': '#00d4ff'},
+            'efficient': {'name': '上课关键期', 'start': 9, 'end': 27, 'color': '#10b981'},
+            'fatigue': {'name': '疲劳期', 'start': 27, 'end': 36, 'color': '#f59e0b'},
+            'closing': {'name': '临近下课期', 'start': 36, 'end': 45, 'color': '#ef4444'}
         }
     
     def _get_total_students_col(self, df):

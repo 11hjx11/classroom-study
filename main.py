@@ -26,9 +26,15 @@ def load_config(config_path='config.yaml'):
         with open(config_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
     return {
-        'sampling': {'frame_interval_sec': 3, 'max_frames': 500},
+        'sampling': {'frame_interval_sec': 3, 'max_frames': 900},
         'detection': {'model': 'yolov8n.pt', 'conf_threshold': 0.3},
         'head_pose': {'pitch_up': 15, 'pitch_down': -10, 'yaw_side': 20},
+        'teacher_detection': {
+            'podium_bottom_ratio': 0.3,
+            'podium_center_width': 0.4,
+            'min_standing_height': 0.35,
+            'confidence_threshold': 0.7
+        },
         'output': {'cache_csv': 'cache_csv/'}
     }
 
@@ -46,7 +52,7 @@ def validate_frame_data(result):
     返回：(是否有效, 错误信息列表)
     """
     errors = []
-    total_stu = result.get('total_stu', 0)
+    total_stu = result.get('total_stu', result.get('total_students', 0))
     
     behavior_cols = ['focus_listen', 'study_bow', 'empty_mind', 'sleep_stu',
                      'look_side', 'talk_discuss', 'talk_private', 'stand_up',
@@ -127,6 +133,10 @@ def process_video(video_path, config):
                 result['is_valid'] = True
                 result['invalid_reason'] = 'valid'
                 
+                # 统一字段名：将 total_students 转换为 total_stu
+                if 'total_students' in result and 'total_stu' not in result:
+                    result['total_stu'] = result['total_students']
+                
                 # 数据校验
                 _, errors = validate_frame_data(result)
                 if errors:
@@ -159,7 +169,7 @@ def print_summary(results):
         return
 
     total_frames = len(results)
-    total_students = sum(r['total_stu'] for r in results)
+    total_students = sum(r.get('total_stu', r.get('total_students', 0)) for r in results)
     
     # 统计有效帧和无效帧
     valid_frames = sum(1 for r in results if r.get('is_valid', True))
