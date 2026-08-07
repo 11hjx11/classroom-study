@@ -40,56 +40,71 @@
 - **AI报告生成** - 对接通义千问大模型生成专业的学情分析报告
 - **可视化数据输出** - 饼图、柱状图、趋势图等数据可视化
 
+### Agent 智能体模块
+- **LangGraph 驱动的 ReAct Agent** - 基于 LangGraph StateGraph 实现推理-行动循环，自动编排工具调用
+- **10 个专用工具** - 涵盖视频管理、指标计算、趋势分析、报告生成等全流程操作
+- **通义千问大模型接入** - 通过 OpenAI 兼容接口对接 DashScope（qwen3-max）
+- **流式 SSE 响应** - 实时推送思考状态、工具调用、执行结果，支持前端流式渲染
+- **多轮对话上下文** - 自动维护对话历史，支持追问与指代消解
+- **降级容错** - LLM 不可用时自动切换到规则化兜底响应
+
 ### 前端展示
-- **简约美观的Web界面** - 现代化设计风格
+- **对话式 Web 界面** - 类 ChatGPT 交互体验，支持自然语言查询课堂学情
+- **流式打字机效果** - SSE 实时推送，逐段渲染 Agent 回复
+- **工具调用可视化** - 展示 Agent 的思考过程与工具执行状态
 - **视频上传与管理** - 支持多视频上传与管理
-- **实时分析进度展示** - 可视化展示分析过程
-- **数据看板** - 多维度学情指标展示，含进度条可视化
-- **时序趋势图** - 时间段格式横坐标，支持鼠标悬停交互
-- **报告查看与下载** - 支持报告预览与下载
+- **Markdown 渲染** - 表格、列表、代码块等格式化输出
 
 ## 项目结构
 
 ```
 classroom_study/
-├── inputs/                     # 输入视频目录
-├── outputs/                    # 输出文件目录
-│   ├── csv/                   # 生成的CSV数据
-│   ├── reports/               # 生成的分析报告
-│   └── visualizations/        # 可视化图表
-├── frontend/                  # 前端Web界面
+├── uploads/                    # 上传视频目录
+├── cache_csv/                  # 分析生成的CSV缓存
+├── reports/                    # 生成的分析报告
+├── frontend/                   # 前端Web界面
 │   ├── static/
-│   │   ├── css/style.css
-│   │   └── js/app.js
-│   └── templates/index.html
-├── src/                       # 源代码目录
-│   ├── cv_module/             # 计算机视觉模块
-│   │   ├── video_sampler.py       # 视频抽帧采样
-│   │   ├── student_detector.py    # YOLO学生检测 + ByteTrack跟踪
-│   │   ├── head_pose_detector.py  # MediaPipe头部姿态检测
-│   │   ├── behavior_classifier.py # 行为分类器
-│   │   ├── csv_saver.py           # 数据保存
+│   │   └── webfonts/           # FontAwesome 图标字体
+│   └── templates/
+│       └── chat.html           # 对话式前端页面
+├── src/                        # 源代码目录
+│   ├── cv_module/              # 计算机视觉模块
+│   │   ├── video_sampler.py        # 视频抽帧采样
+│   │   ├── student_detector.py     # YOLO学生检测 + ByteTrack跟踪
+│   │   ├── head_pose_detector.py   # MediaPipe头部姿态检测
+│   │   ├── behavior_classifier.py  # 行为分类器
+│   │   ├── csv_saver.py            # 数据保存
 │   │   └── simulation_generator.py # 仿真数据生成器
-│   └── analysis_module/       # 数据分析模块
-│       ├── data_cleaner.py        # 数据清洗
-│       ├── temporal_analyzer.py   # 时段分析
-│       ├── metrics_calculator.py  # 指标计算
-│       ├── trend_analyzer.py      # 趋势分析
-│       ├── report_generator.py    # 报告生成（集成通义千问）
-│       ├── visualization.py       # 可视化
-│       └── analyzer.py            # 分析器主入口
-├── tests/                     # 测试文件目录
+│   ├── analysis_module/        # 数据分析模块
+│   │   ├── data_cleaner.py         # 数据清洗
+│   │   ├── temporal_analyzer.py    # 时段分析
+│   │   ├── metrics_calculator.py   # 指标计算
+│   │   ├── trend_analyzer.py       # 趋势分析
+│   │   ├── report_generator.py     # 报告生成（集成通义千问）
+│   │   ├── visualization.py        # 可视化
+│   │   └── analyzer.py             # 分析器主入口
+│   ├── agents/                 # Agent 智能体模块（LangGraph）
+│   │   ├── orchestrator.py         # LangGraph 编排器（StateGraph + ReAct）
+│   │   └── prompts.py              # 系统提示词
+│   └── tools/                  # Agent 工具层
+│       ├── base.py                 # 工具基类与注册表
+│       ├── video_tools.py          # 视频管理工具
+│       ├── analysis_tools.py       # 数据分析工具
+│       └── report_tools.py         # 报告生成工具
+├── tests/                      # 测试文件目录
 │   ├── test_api.py
 │   ├── test_analysis.py
 │   └── test_analysis_full.py
-├── examples/                  # 示例代码目录
+├── examples/                   # 示例代码目录
 │   ├── demo_visualize.py
 │   └── generate_report.py
-├── scripts/                   # 辅助脚本目录
-│   └── config.yaml            # 配置文件
-├── requirements.txt           # 依赖列表
-├── main.py                    # 主入口程序（视频分析）
-├── app.py                     # Flask Web应用入口
+├── scripts/                    # 辅助脚本目录
+│   └── config.yaml             # 配置文件
+├── requirements.txt            # 依赖列表
+├── main.py                     # 主入口程序（视频分析）
+├── app.py                      # Flask Web应用入口
+├── test_agent.py               # Agent 功能测试
+├── test_fallback.py            # 降级模式测试
 ├── .gitignore
 └── README.md
 ```
@@ -101,6 +116,27 @@ classroom_study/
 ```bash
 pip install -r requirements.txt
 ```
+
+### 环境变量
+
+Agent 模块通过环境变量读取通义千问 API Key，运行前需配置：
+
+**Windows PowerShell（临时生效）**
+```powershell
+$env:QWEN_API_KEY = "sk-你的DashScope API Key"
+```
+
+**Windows（永久生效）**
+```powershell
+setx QWEN_API_KEY "sk-你的DashScope API Key"
+```
+
+**Linux/macOS**
+```bash
+export QWEN_API_KEY="sk-你的DashScope API Key"
+```
+
+> API Key 在阿里云百炼平台（DashScope）申请：https://dashscope.console.aliyun.com/
 
 ### 主要依赖
 
@@ -116,6 +152,10 @@ pip install -r requirements.txt
 | matplotlib | >=3.7.0 | 数据可视化 |
 | flask | >=2.3.0 | Web应用框架 |
 | requests | >=2.28.0 | HTTP请求（API调用） |
+| langgraph | >=0.2.0 | Agent 状态图编排 |
+| langchain | >=0.3.0 | LLM 框架 |
+| langchain-openai | >=0.2.0 | OpenAI 兼容接口接入通义千问 |
+| langchain-core | >=0.3.0 | LangChain 核心抽象 |
 
 ## 使用方法
 
@@ -149,17 +189,19 @@ python generate_report.py
 
 生成的报告保存在 `outputs/reports/` 目录，可视化数据保存在 `outputs/visualizations/` 目录。
 
-### 3. 启动Web界面
+### 3. 启动对话式 Web 界面
 
 ```bash
+# 先设置环境变量（见"环境变量"章节）
+$env:QWEN_API_KEY = "sk-你的API Key"
 python app.py
 ```
 
-访问 `http://127.0.0.1:5000` 打开Web界面，可：
-- 上传视频文件
-- 在线分析课堂状态
-- 查看分析报告
-- 下载数据文件
+访问 `http://127.0.0.1:5000` 打开对话界面，可：
+- 用自然语言查询课堂学情（如"列出所有视频"、"分析第一个视频的专注度"）
+- 上传视频文件后自动分析
+- 实时查看 Agent 的思考过程与工具调用
+- 流式渲染回复内容（支持 Markdown 表格、列表等）
 
 ### 4. 可视化演示
 
