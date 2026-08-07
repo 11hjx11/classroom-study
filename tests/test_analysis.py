@@ -20,8 +20,11 @@ def test_analysis():
         print("请先运行主程序生成CSV数据")
         return
     
-    # 创建分析器（使用用户提供的API Key）
-    api_key = "sk-02bf14d117fb415bbc28e7ce41a4c9db"
+    # 创建分析器（从环境变量读取 API Key）
+    api_key = os.environ.get("QWEN_API_KEY")
+    if not api_key:
+        print("请先设置环境变量 QWEN_API_KEY")
+        return
     analyzer = ClassroomAnalyzer(api_key=api_key)
     
     # 执行分析

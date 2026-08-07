@@ -7,7 +7,7 @@ from src.analysis_module import ClassroomAnalyzer
 
 def main():
     # 创建分析器
-    analyzer = ClassroomAnalyzer(api_key='sk-02bf14d117fb415bbc28e7ce41a4c9db')
+    analyzer = ClassroomAnalyzer()
 
     # 加载CSV数据并分析
     print("正在分析仿真数据...")

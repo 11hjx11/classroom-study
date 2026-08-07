@@ -2,10 +2,14 @@
 测试阿里云百炼平台API - 使用正确的OpenAI兼容格式
 """
 
+import os
 import requests
 
 def test_dashscope_openai_api():
-    api_key = "sk-02bf14d117fb415bbc28e7ce41a4c9db"
+    api_key = os.environ.get("QWEN_API_KEY")
+    if not api_key:
+        print("请先设置环境变量 QWEN_API_KEY")
+        return
     model = "qwen-plus-2025-07-28"
     url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
     

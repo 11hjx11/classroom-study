@@ -16,8 +16,12 @@ class ReportGenerator:
     """报告生成器"""
     
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.environ.get('QWEN_API_KEY', '')
-        self.model = "qwen-plus-2025-07-28"
+        self.api_key = api_key or os.environ.get('QWEN_API_KEY')
+        if not self.api_key:
+            raise RuntimeError(
+                "未配置通义千问 API Key，请设置环境变量 QWEN_API_KEY"
+            )
+        self.model = "qwen3-max"
         self.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
     
     def build_prompt(self, analysis_results: Dict) -> str:

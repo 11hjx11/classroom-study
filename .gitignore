@@ -50,6 +50,10 @@ inputs/*.mov
 inputs/*.mkv
 inputs/*.flv
 
+uploads/
+cache_csv/
+reports/
+
 outputs/csv/*.csv
 outputs/reports/*.txt
 outputs/reports/*.json
@@ -57,3 +61,7 @@ outputs/visualizations/*.png
 outputs/visualizations/*.jpg
 
 screenshots/
+
+# 临时调试脚本
+check_*.py
+test_js_syntax.py
