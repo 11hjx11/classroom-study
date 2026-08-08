@@ -50,15 +50,21 @@ inputs/*.mov
 inputs/*.mkv
 inputs/*.flv
 
-uploads/
-cache_csv/
-reports/
+uploads/*
+!uploads/.gitkeep
+cache_csv/*
+!cache_csv/.gitkeep
+reports/*
+!reports/.gitkeep
 
 outputs/csv/*.csv
 outputs/reports/*.txt
 outputs/reports/*.json
 outputs/visualizations/*.png
 outputs/visualizations/*.jpg
+outputs/visualizations/*.txt
+outputs/visualizations/*.pdf
+outputs/visualizations/*.html
 
 screenshots/
 
