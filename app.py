@@ -21,13 +21,28 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # ============ Agent 核心逻辑 ============
 
 _agent_instance = None
+_agent_mode = "single"  # "single" 或 "multi"
 
 def get_agent():
-    global _agent_instance
+    global _agent_instance, _agent_mode
     if _agent_instance is None:
         from src.agents.orchestrator import ClassAgent
         _agent_instance = ClassAgent()
     return _agent_instance
+
+def get_multi_agent():
+    """获取多 Agent 实例（懒加载）"""
+    global _agent_instance
+    if _agent_instance is None or not hasattr(_agent_instance, '_sub_agent_tools'):
+        from src.agents.multi_agent import MultiAgentOrchestrator
+        _agent_instance = MultiAgentOrchestrator()
+    return _agent_instance
+
+def set_agent_mode(mode: str):
+    """切换 Agent 模式"""
+    global _agent_mode, _agent_instance
+    _agent_mode = mode
+    _agent_instance = None  # 重置实例，下次 get_agent 时重建
 
 # ============ 路由 ============
 
@@ -47,7 +62,10 @@ def chat():
         if not user_message:
             return jsonify({'success': False, 'error': '消息不能为空'})
 
-        agent = get_agent()
+        if _agent_mode == "multi":
+            agent = get_multi_agent()
+        else:
+            agent = get_agent()
         result = agent.chat(user_message)
         return jsonify(result)
     except Exception as e:
@@ -62,7 +80,10 @@ def chat_stream():
         if not user_message:
             return jsonify({'success': False, 'error': '消息不能为空'})
 
-        agent = get_agent()
+        if _agent_mode == "multi":
+            agent = get_multi_agent()
+        else:
+            agent = get_agent()
 
         def generate():
             try:
@@ -119,6 +140,28 @@ def chat_greeting():
     try:
         agent = get_agent()
         return jsonify({'success': True, 'greeting': agent.get_greeting()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/agent/mode', methods=['GET', 'POST'])
+def agent_mode():
+    """获取或切换 Agent 模式（single/multi）"""
+    global _agent_mode
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        mode = data.get('mode', 'single')
+        if mode in ('single', 'multi'):
+            set_agent_mode(mode)
+            return jsonify({'success': True, 'mode': mode, 'message': f'已切换到{"单" if mode=="single" else "多"} Agent 模式'})
+        return jsonify({'success': False, 'error': '无效的模式，可选: single, multi'})
+    return jsonify({'success': True, 'mode': _agent_mode})
+
+@app.route('/api/agent/usage')
+def agent_usage():
+    """获取上次对话的 Token 用量"""
+    try:
+        agent = get_agent()
+        return jsonify({'success': True, 'usage': agent.get_last_usage()})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 

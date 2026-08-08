@@ -17,6 +17,7 @@ from .analysis_tools import (
     CompareMetricsTool,
 )
 from .report_tools import GenerateReportTool, QuickSummaryTool
+from .rag_tools import SearchHistoryTool
 
 
 def create_default_registry() -> ToolRegistry:
@@ -39,8 +40,11 @@ def create_default_registry() -> ToolRegistry:
         GenerateReportTool(),
         QuickSummaryTool(),
     ]
+    rag_tools = [
+        SearchHistoryTool(),
+    ]
 
-    for t in video_tools + analysis_tools + report_tools:
+    for t in video_tools + analysis_tools + report_tools + rag_tools:
         registry.register(t)
 
     return registry
@@ -60,5 +64,6 @@ __all__ = [
     "CompareMetricsTool",
     "GenerateReportTool",
     "QuickSummaryTool",
+    "SearchHistoryTool",
     "create_default_registry",
 ]

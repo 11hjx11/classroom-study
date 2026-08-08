@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  web:
+    build: .
+    container_name: classroom-study
+    ports:
+      - "5000:5000"
+    environment:
+      - QWEN_API_KEY=${QWEN_API_KEY}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+    volumes:
+      - ./uploads:/app/uploads
+      - ./cache_csv:/app/cache_csv
+      - ./reports:/app/reports
+      - ./outputs:/app/outputs
+    restart: unless-stopped

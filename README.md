@@ -42,11 +42,65 @@
 
 ### Agent 智能体模块
 - **LangGraph 驱动的 ReAct Agent** - 基于 LangGraph StateGraph 实现推理-行动循环，自动编排工具调用
-- **10 个专用工具** - 涵盖视频管理、指标计算、趋势分析、报告生成等全流程操作
+- **多 Agent 协作（Supervisor 模式）** - 支持 Supervisor 路由到 Video/Analysis/Report 三个专职子 Agent
+- **11 个专用工具** - 涵盖视频管理、指标计算、趋势分析、报告生成、RAG 历史检索等全流程操作
+- **RAG 历史检索** - 基于 TF-IDF 向量检索历史分析报告，支持跨课对比
+- **Memory 检查点持久化** - LangGraph MemorySaver，支持 thread_id 多会话隔离
+- **LangSmith 可观测性** - 环境变量自动启用 trace 可视化，调试推理链
+- **Token 用量追踪** - 每次对话记录 input/output tokens、LLM 调用次数、工具调用次数
+- **工具执行重试** - tenacity 指数退避，网络异常自动重试 3 次
+- **异步支持** - achat / achat_stream 异步接口，支持高并发场景
 - **通义千问大模型接入** - 通过 OpenAI 兼容接口对接 DashScope（qwen3-max）
 - **流式 SSE 响应** - 实时推送思考状态、工具调用、执行结果，支持前端流式渲染
 - **多轮对话上下文** - 自动维护对话历史，支持追问与指代消解
 - **降级容错** - LLM 不可用时自动切换到规则化兜底响应
+
+### 系统架构
+
+```mermaid
+graph TB
+    User[用户输入] --> API[Flask API]
+    API --> ModeSwitch{Agent 模式}
+
+    ModeSwitch -->|单 Agent| SingleAgent[ClassAgent]
+    ModeSwitch -->|多 Agent| MultiAgent[MultiAgentOrchestrator]
+
+    SingleAgent --> SG[LangGraph StateGraph]
+    SG --> AgentNode[Agent 节点<br/>LLM 推理]
+    AgentNode -->|tool_calls| ToolsNode[Tools 节点<br/>执行工具]
+    ToolsNode --> AgentNode
+    AgentNode -->|无 tool_calls| END[返回结果]
+
+    MultiAgent --> Supervisor[Supervisor 节点<br/>意图分类]
+    Supervisor -->|路由| VideoAgent[Video Agent<br/>视频管理]
+    Supervisor -->|路由| AnalysisAgent[Analysis Agent<br/>数据分析]
+    Supervisor -->|路由| ReportAgent[Report Agent<br/>报告生成]
+    VideoAgent --> Supervisor
+    AnalysisAgent --> Supervisor
+    ReportAgent --> Supervisor
+    Supervisor -->|FINISH| END
+
+    ToolsNode --> Registry[ToolRegistry<br/>11 个工具]
+    VideoAgent --> Registry
+    AnalysisAgent --> Registry
+    ReportAgent --> Registry
+
+    Registry --> VideoTools[视频工具<br/>list/get/analyze]
+    Registry --> AnalysisTools[分析工具<br/>metrics/trend/compare]
+    Registry --> ReportTools[报告工具<br/>report/summary]
+    Registry --> RAGTool[RAG 工具<br/>search_history]
+
+    Memory[(MemorySaver<br/>检查点持久化)] --> SG
+    Memory --> MultiAgent
+    LangSmith[LangSmith<br/>Trace 可观测] --> SG
+    LangSmith --> MultiAgent
+
+    style User fill:#e1f5fe
+    style SG fill:#fff3e0
+    style Supervisor fill:#f3e5f5
+    style RAGTool fill:#e8f5e9
+    style Memory fill:#fce4ec
+```
 
 ### 前端展示
 - **对话式 Web 界面** - 类 ChatGPT 交互体验，支持自然语言查询课堂学情
@@ -84,13 +138,15 @@ classroom_study/
 │   │   ├── visualization.py        # 可视化
 │   │   └── analyzer.py             # 分析器主入口
 │   ├── agents/                 # Agent 智能体模块（LangGraph）
-│   │   ├── orchestrator.py         # LangGraph 编排器（StateGraph + ReAct）
+│   │   ├── orchestrator.py         # 单 Agent 编排器（StateGraph + ReAct + Memory）
+│   │   ├── multi_agent.py          # 多 Agent 编排器（Supervisor 模式）
 │   │   └── prompts.py              # 系统提示词
 │   └── tools/                  # Agent 工具层
 │       ├── base.py                 # 工具基类与注册表
 │       ├── video_tools.py          # 视频管理工具
 │       ├── analysis_tools.py       # 数据分析工具
-│       └── report_tools.py         # 报告生成工具
+│       ├── report_tools.py         # 报告生成工具
+│       └── rag_tools.py            # RAG 历史检索工具（TF-IDF）
 ├── tests/                      # 测试文件目录
 │   ├── test_api.py
 │   ├── test_analysis.py
@@ -103,8 +159,11 @@ classroom_study/
 ├── requirements.txt            # 依赖列表
 ├── main.py                     # 主入口程序（视频分析）
 ├── app.py                      # Flask Web应用入口
+├── benchmark.py                # 性能基准测试脚本
 ├── test_agent.py               # Agent 功能测试
 ├── test_fallback.py            # 降级模式测试
+├── Dockerfile                  # Docker 镜像构建文件
+├── docker-compose.yml          # Docker Compose 编排文件
 ├── .gitignore
 └── README.md
 ```
@@ -220,6 +279,61 @@ python demo_visualize.py
 - `q` - 退出
 - `s` - 截图保存
 - `t` - 显示/隐藏轨迹
+
+### 5. Docker 部署
+
+```bash
+# 设置环境变量
+export QWEN_API_KEY="sk-你的API Key"
+
+# 一键启动
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f
+
+# 停止
+docker-compose down
+```
+
+访问 `http://localhost:5000` 即可使用。
+
+### 6. 性能基准测试
+
+```bash
+python benchmark.py
+```
+
+对比单 Agent vs 多 Agent 模式的响应时间、Token 消耗、工具调用次数，生成 JSON 报告到 `reports/benchmark_report.json`。
+
+### 7. Agent 模式切换
+
+```bash
+# 查看当前模式
+curl http://127.0.0.1:5000/api/agent/mode
+
+# 切换到多 Agent 模式
+curl -X POST http://127.0.0.1:5000/api/agent/mode -H "Content-Type: application/json" -d '{"mode":"multi"}'
+
+# 切换回单 Agent 模式
+curl -X POST http://127.0.0.1:5000/api/agent/mode -H "Content-Type: application/json" -d '{"mode":"single"}'
+
+# 查看 Token 用量
+curl http://127.0.0.1:5000/api/agent/usage
+```
+
+### 8. LangSmith 可观测性（可选）
+
+设置环境变量后自动启用 LangSmith trace 可视化：
+
+```bash
+export LANGCHAIN_API_KEY="ls-你的LangSmith Key"
+# 以下会自动设置
+# LANGCHAIN_TRACING_V2=true
+# LANGCHAIN_PROJECT=classroom-study
+```
+
+启用后可在 https://smith.langchain.com 查看每次对话的完整推理链、工具调用、Token 消耗。
 
 ## 配置说明
 

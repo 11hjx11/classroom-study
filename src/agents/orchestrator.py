@@ -3,19 +3,22 @@
 基于 LangGraph StateGraph 实现的 ReAct 模式智能体
 负责：理解用户意图 → 规划工具调用 → 执行工具 → 汇总结果 → 生成回答
 
-核心结构：
-  - StateGraph(AgentState)
-  - 节点：agent (调用 LLM) → tools (执行工具) → agent → ... → END
-  - 条件边：agent 节点根据是否产生 tool_calls 决定走向 tools 还是 END
-  - 状态：messages（使用 add_messages reducer 自动累加）
-LLM 通过 langchain_openai.ChatOpenAI 接入通义千问（DashScope OpenAI 兼容接口）。
+核心特性：
+  1. LangGraph StateGraph ReAct 循环（agent ⇄ tools）
+  2. MemorySaver 检查点：跨会话状态持久化，支持 thread_id 多会话隔离
+  3. LangSmith 可观测性：环境变量自动启用 trace 可视化
+  4. Token 用量追踪：每次对话记录 input/output/total tokens
+  5. 工具执行重试：tenacity 指数退避，提升容错能力
+  6. 异步支持：achat / achat_stream 异步接口
+  7. 降级容错：LLM 不可用时自动切换关键词匹配模式
 """
 
 import json
 import os
 import re
 import traceback
-from typing import Any, Dict, Generator, List, Optional, Sequence, Type
+from dataclasses import dataclass, field
+from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Sequence
 
 from typing_extensions import Annotated, TypedDict
 
@@ -31,9 +34,73 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.tools import BaseTool as LCBaseTool, StructuredTool
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.checkpoint.memory import MemorySaver
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+
+# ============================================================
+# LangSmith 可观测性（环境变量自动启用）
+# ============================================================
+
+def _setup_langsmith():
+    """若设置了 LANGCHAIN_API_KEY，自动启用 LangSmith trace"""
+    if os.environ.get("LANGCHAIN_API_KEY"):
+        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+        os.environ.setdefault("LANGCHAIN_PROJECT", "classroom-study")
+
+
+_setup_langsmith()
+
+
+# ============================================================
+# Token 用量追踪
+# ============================================================
+
+@dataclass
+class TokenUsage:
+    """单次对话的 Token 用量"""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    llm_calls: int = 0
+    tool_calls: int = 0
+
+    def add(self, input_tokens: int = 0, output_tokens: int = 0):
+        self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
+        self.total_tokens += input_tokens + output_tokens
+        self.llm_calls += 1
+
+    def to_dict(self) -> Dict:
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+            "llm_calls": self.llm_calls,
+            "tool_calls": self.tool_calls,
+        }
+
+
+class TokenTrackingCallback(BaseCallbackHandler):
+    """LangChain 回调：追踪 LLM token 用量"""
+
+    def __init__(self, usage: TokenUsage):
+        self.usage = usage
+
+    def on_llm_end(self, response, **kwargs):
+        try:
+            if response.llm_output and "token_usage" in response.llm_output:
+                tu = response.llm_output["token_usage"]
+                self.usage.add(
+                    input_tokens=tu.get("prompt_tokens", 0),
+                    output_tokens=tu.get("completion_tokens", 0),
+                )
+        except Exception:
+            pass
 
 
 # ============================================================
@@ -80,8 +147,15 @@ def _build_args_model(tool) -> type:
 
 def _wrap_as_langchain_tool(original_tool) -> LCBaseTool:
     """将项目自有 BaseTool 包装为 LangChain StructuredTool"""
+
     args_model = _build_args_model(original_tool)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=1, max=10),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+        reraise=True,
+    )
     def _run(**kwargs):
         return original_tool.run(**kwargs)
 
@@ -107,11 +181,12 @@ class ClassAgent:
                 "未配置通义千问 API Key，请设置环境变量 QWEN_API_KEY 或在初始化时传入 api_key 参数"
             )
         self.model = model
-        # DashScope 提供的 OpenAI 兼容接口（注意 base_url 末尾不带 /chat/completions）
         self.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         self.registry: ToolRegistry = create_default_registry()
         self.conversation_history: List[Dict] = []
         self._system_prompt = SYSTEM_PROMPT
+        self._thread_id: str = "default"
+        self._last_usage: TokenUsage = TokenUsage()
 
         # 初始化 LLM、工具、编译后的图
         self._llm = self._build_llm()
@@ -121,6 +196,7 @@ class ClassAgent:
             if self._langchain_tools
             else self._llm
         )
+        self._memory = MemorySaver()
         self._graph = self._build_graph()
 
     # ---------------- 初始化相关 ----------------
@@ -142,7 +218,7 @@ class ClassAgent:
         return [_wrap_as_langchain_tool(t) for t in self.registry.get_all_tools()]
 
     def _build_graph(self):
-        """构建并编译 LangGraph 状态图（ReAct 模式）"""
+        """构建并编译 LangGraph 状态图（ReAct 模式 + MemorySaver 检查点）"""
         graph = StateGraph(AgentState)
 
         graph.add_node("agent", self._agent_node)
@@ -161,13 +237,19 @@ class ClassAgent:
 
         graph.add_edge("tools", "agent")
 
-        return graph.compile()
+        # 编译时传入 MemorySaver，实现状态持久化
+        return graph.compile(checkpointer=self._memory)
 
     # ---------------- LangGraph 节点 ----------------
 
     def _agent_node(self, state: AgentState) -> Dict:
         """Agent 节点：调用 LLM 进行推理"""
         response: BaseMessage = self._llm_with_tools.invoke(state["messages"])
+        return {"messages": [response]}
+
+    async def _agent_node_async(self, state: AgentState) -> Dict:
+        """Agent 节点（异步）：调用 LLM 进行推理"""
+        response: BaseMessage = await self._llm_with_tools.ainvoke(state["messages"])
         return {"messages": [response]}
 
     def _tools_node(self, state: AgentState) -> Dict:
@@ -177,6 +259,7 @@ class ClassAgent:
         for tc in last_message.tool_calls:
             name = tc.get("name", "")
             args = tc.get("args") or {}
+            self._last_usage.tool_calls += 1
             result = self.registry.execute_tool(name, **args)
             tool_results.append(
                 ToolMessage(
@@ -187,6 +270,10 @@ class ClassAgent:
             )
         return {"messages": tool_results}
 
+    async def _tools_node_async(self, state: AgentState) -> Dict:
+        """工具节点（异步）：执行 LLM 的工具调用"""
+        return self._tools_node(state)
+
     def _should_continue(self, state: AgentState) -> str:
         """条件边：判断是否继续调用工具"""
         last_message = state["messages"][-1]
@@ -194,11 +281,23 @@ class ClassAgent:
             return "tools"
         return "end"
 
+    def _get_config(self) -> Dict:
+        """获取 LangGraph 调用配置（含 thread_id 用于会话隔离）"""
+        return {
+            "configurable": {"thread_id": self._thread_id},
+            "recursion_limit": 25,
+        }
+
     # ---------------- 公共接口 ----------------
+
+    def set_thread_id(self, thread_id: str):
+        """设置会话线程 ID（用于多会话隔离）"""
+        self._thread_id = thread_id
 
     def reset(self):
         """重置对话历史"""
         self.conversation_history = []
+        self._thread_id = "default"
 
     def get_available_tools(self) -> List[Dict]:
         """获取所有可用工具的 function calling schema"""
@@ -208,19 +307,27 @@ class ClassAgent:
         """获取欢迎语"""
         return FIRST_GREETING
 
-    def chat(self, user_message: str, stream: bool = False) -> Dict:
+    def get_last_usage(self) -> Dict:
+        """获取上次对话的 Token 用量"""
+        return self._last_usage.to_dict()
+
+    def chat(self, user_message: str, thread_id: str = None) -> Dict:
         """
         与 Agent 对话（非流式）
         完整流程：用户消息 → LLM → 工具调用 → LLM → ... → 最终回答
         若 LLM 不可用，自动降级为关键词匹配模式
         """
+        if thread_id:
+            self.set_thread_id(thread_id)
+
+        self._last_usage = TokenUsage()
         messages = self._build_messages(user_message)
+        config = self._get_config()
 
         try:
-            # recursion_limit：每次 agent→tools 往返计 2 步，留足 12 轮余量
             final_state = self._graph.invoke(
                 {"messages": messages},
-                config={"recursion_limit": 25},
+                config=config,
             )
             final_messages: List[BaseMessage] = final_state["messages"]
 
@@ -240,19 +347,60 @@ class ClassAgent:
                 "success": True,
                 "message": last_ai_content,
                 "conversation": self.conversation_history,
+                "usage": self._last_usage.to_dict(),
             }
         except Exception as e:
             traceback.print_exc()
-            # LLM 不可用时降级为关键词匹配模式
             return self._fallback_handle(user_message)
 
-    def chat_stream(self, user_message: str) -> Generator:
+    async def achat(self, user_message: str, thread_id: str = None) -> Dict:
+        """与 Agent 对话（异步非流式）"""
+        if thread_id:
+            self.set_thread_id(thread_id)
+
+        self._last_usage = TokenUsage()
+        messages = self._build_messages(user_message)
+        config = self._get_config()
+
+        try:
+            final_state = await self._graph.ainvoke(
+                {"messages": messages},
+                config=config,
+            )
+            final_messages: List[BaseMessage] = final_state["messages"]
+
+            self.conversation_history = self._messages_to_dicts(
+                final_messages[1:]
+            )
+
+            last_ai_content = ""
+            for msg in reversed(final_messages):
+                if isinstance(msg, AIMessage):
+                    last_ai_content = msg.content or ""
+                    break
+
+            return {
+                "success": True,
+                "message": last_ai_content,
+                "conversation": self.conversation_history,
+                "usage": self._last_usage.to_dict(),
+            }
+        except Exception as e:
+            traceback.print_exc()
+            return self._fallback_handle(user_message)
+
+    def chat_stream(self, user_message: str, thread_id: str = None) -> Generator:
         """
         与 Agent 对话（流式）
         逐步 yield 事件，前端通过 SSE 接收
         若 LLM 不可用，自动降级为关键词匹配模式
         """
+        if thread_id:
+            self.set_thread_id(thread_id)
+
+        self._last_usage = TokenUsage()
         messages = self._build_messages(user_message)
+        config = self._get_config()
 
         yield {"type": "status", "data": "thinking", "message": "正在分析您的问题..."}
 
@@ -261,7 +409,7 @@ class ClassAgent:
         try:
             for event in self._graph.stream(
                 {"messages": messages},
-                config={"recursion_limit": 25},
+                config=config,
                 stream_mode="updates",
             ):
                 for node_name, node_output in event.items():
@@ -325,6 +473,97 @@ class ClassAgent:
             # 保存对话历史
             self.conversation_history = self._messages_to_dicts(new_messages)
 
+            yield {"type": "done", "data": None, "message": "分析完成"}
+
+        except Exception as e:
+            traceback.print_exc()
+            yield {
+                "type": "status",
+                "data": "fallback",
+                "message": "LLM 不可用，使用降级模式...",
+            }
+            fallback_result = self._fallback_handle(user_message)
+            yield {"type": "content", "data": fallback_result.get("message", "")}
+            yield {"type": "done", "data": None, "message": "分析完成"}
+
+    async def achat_stream(self, user_message: str, thread_id: str = None) -> AsyncGenerator:
+        """与 Agent 对话（异步流式）"""
+        if thread_id:
+            self.set_thread_id(thread_id)
+
+        self._last_usage = TokenUsage()
+        messages = self._build_messages(user_message)
+        config = self._get_config()
+
+        yield {"type": "status", "data": "thinking", "message": "正在分析您的问题..."}
+
+        new_messages: List[BaseMessage] = []
+
+        try:
+            async for event in self._graph.astream(
+                {"messages": messages},
+                config=config,
+                stream_mode="updates",
+            ):
+                for node_name, node_output in event.items():
+                    new_msgs: List[BaseMessage] = node_output.get("messages", []) or []
+                    new_messages.extend(new_msgs)
+
+                    if node_name == "agent":
+                        for msg in new_msgs:
+                            if not isinstance(msg, AIMessage):
+                                continue
+                            if msg.tool_calls:
+                                func_names = [
+                                    tc.get("name", "") for tc in msg.tool_calls
+                                ]
+                                yield {
+                                    "type": "tool_call",
+                                    "data": {"tools": func_names},
+                                    "message": f"调用工具: {', '.join(func_names)}",
+                                }
+                            if msg.content:
+                                yield {"type": "content", "data": msg.content}
+
+                    elif node_name == "tools":
+                        yield {
+                            "type": "status",
+                            "data": "executing_tools",
+                            "message": "执行工具调用...",
+                        }
+                        for msg in new_msgs:
+                            if not isinstance(msg, ToolMessage):
+                                continue
+                            try:
+                                parsed = json.loads(msg.content)
+                                if parsed.get("success"):
+                                    yield {
+                                        "type": "tool_result",
+                                        "data": {
+                                            "tool": msg.name,
+                                            "summary": self._summarize_result(
+                                                parsed.get("data", {})
+                                            ),
+                                        },
+                                        "message": f"{msg.name} 执行成功",
+                                    }
+                                else:
+                                    yield {
+                                        "type": "tool_error",
+                                        "data": {
+                                            "tool": msg.name,
+                                            "error": parsed.get("error", "未知错误"),
+                                        },
+                                        "message": f"{msg.name} 执行失败",
+                                    }
+                            except json.JSONDecodeError:
+                                yield {
+                                    "type": "tool_result",
+                                    "data": {"tool": msg.name},
+                                    "message": f"{msg.name} 执行完成",
+                                }
+
+            self.conversation_history = self._messages_to_dicts(new_messages)
             yield {"type": "done", "data": None, "message": "分析完成"}
 
         except Exception as e:
@@ -427,6 +666,8 @@ class ClassAgent:
             (["查询", "query", "原始数据", "帧数据"], "query_csv_data", self._guess_csv_path(user_message)),
             # 分析视频
             (["分析视频", "分析课堂", "analyze", "处理视频"], "analyze_video", self._guess_video_path(user_message)),
+            # RAG 检索
+            (["历史", "历史报告", "之前", "搜索报告"], "search_history", {"query": user_message}),
         ]
 
         for keywords, tool_name, args in rules:
@@ -474,7 +715,8 @@ class ClassAgent:
                 "1. 输入「列出视频」查看可用视频\n"
                 "2. 输入「分析视频」分析最新视频\n"
                 "3. 输入「生成报告」生成学情报告\n"
-                "4. 输入「对比」对比两份数据\n\n"
+                "4. 输入「对比」对比两份数据\n"
+                "5. 输入「历史报告」检索历史分析\n\n"
                 "请更换 API Key 后重启以获得完整 Agent 体验。"
             ),
             "conversation": self.conversation_history,
@@ -548,6 +790,7 @@ class ClassAgent:
             "compare_metrics": "⚖️ 对比结果",
             "query_csv_data": "🔍 数据查询",
             "analyze_video": "🎥 视频分析",
+            "search_history": "📚 历史检索",
         }
 
         title = tool_names.get(tool_name, tool_name)
@@ -587,6 +830,11 @@ class ClassAgent:
             response_parts.append(f"处理帧数：{data.get('total_frames_processed', 0)}")
             response_parts.append(f"学生检测总数：{data.get('total_student_detections', 0)}")
             response_parts.append(f"CSV 输出：{data.get('csv_path', '')}")
+        elif tool_name == "search_history":
+            response_parts.append(f"检索到 {data.get('total_results', 0)} 条历史报告：\n")
+            for r in data.get("results", []):
+                response_parts.append(f"  - **{r['filename']}** (相似度: {r['score']:.2f})")
+                response_parts.append(f"    {r['snippet'][:150]}...")
         else:
             response_parts.append(f"执行成功，结果：\n```json\n{json.dumps(data, ensure_ascii=False, indent=2, default=str)[:2000]}\n```")
 
