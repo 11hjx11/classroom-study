@@ -1,31 +1,40 @@
 """
-RAG 历史检索工具（向量检索版）
+RAG 历史检索工具（向量检索 + LLM Reranker 二阶段检索版）
 基于 Chroma 向量数据库 + DashScope Embedding 实现语义检索
++ LLM Reranker 重排序提升 top-k 质量
 支持 Recursive Character Text Splitter 分块策略 + 持久化向量库
 
+两阶段检索（Two-Stage Retrieval）：
+  Stage 1: Embedding 向量检索 - 召回 top_k * 3 候选（高召回率）
+  Stage 2: LLM Reranker - 对候选用 LLM 评分重排，返回 top_k（高精度）
+
 面试亮点：
+  - 两阶段检索：召回 + 重排，业界标准 RAG 架构
+  - LLM Reranker：用大模型对候选片段打分，解决 Embedding 召回精度不足的问题
   - Embedding 向量检索（非 TF-IDF 关键词匹配）
   - Recursive Character Text Splitter 智能分块（按语义边界切分）
   - Chroma 持久化存储（增量更新，无需重复向量化）
-  - 自动降级：Embedding 不可用时回退到 TF-IDF
+  - 自动降级：Embedding/Reranker 不可用时回退到 TF-IDF
 """
 
 import os
 import glob
+import json
 import hashlib
+import re
 from typing import Dict, Any, List, Optional
 
 from .base import BaseTool, ToolParameter
 
 
 class SearchHistoryTool(BaseTool):
-    """RAG 工具：基于向量检索历史学情分析报告"""
+    """RAG 工具：基于向量检索 + LLM Reranker 检索历史学情分析报告"""
 
     name = "search_history"
     description = (
-        "检索历史学情分析报告（向量语义检索）。当用户询问「之前的分析」「上周的报告」"
+        "检索历史学情分析报告（向量语义检索 + LLM 重排序）。当用户询问「之前的分析」「上周的报告」"
         "「历史数据」「跟之前对比」或需要参考过往课堂分析结果时调用此工具。"
-        "基于 DashScope Embedding 向量化 + Chroma 向量数据库语义匹配，支持跨课对比。"
+        "两阶段检索：DashScope Embedding 召回候选 → LLM Reranker 评分重排，提升 top-k 精度。"
     )
     parameters = [
         ToolParameter(
@@ -47,8 +56,12 @@ class SearchHistoryTool(BaseTool):
     PERSIST_DIR = os.path.join(os.getcwd(), "chroma_db")
     COLLECTION_NAME = "classroom_reports"
 
+    # Reranker 配置
+    RERANK_OVERFETCH_FACTOR = 3  # 召回阶段放大倍数（召回 top_k * 3 候选给 Reranker）
+    RERANK_MAX_CANDIDATES = 10   # Reranker 单次最大候选数（控制 token 消耗）
+
     def execute(self, query: str, top_k: int = 3) -> Dict[str, Any]:
-        """执行 RAG 向量检索"""
+        """执行 RAG 两阶段检索：Embedding 召回 + LLM Reranker 重排"""
         reports_dir = os.environ.get("REPORTS_DIR", "reports")
         if not os.path.isdir(reports_dir):
             alt_dir = "outputs/reports"
@@ -75,14 +88,14 @@ class SearchHistoryTool(BaseTool):
                 "retrieval_method": "none",
             }
 
-        # 尝试向量检索
+        # 尝试向量检索 + LLM Reranker
         try:
-            results = self._vector_search(query, report_files, top_k)
+            results = self._vector_search_with_rerank(query, report_files, top_k)
             return {
                 "total_results": len(results),
                 "results": results,
                 "query": query,
-                "retrieval_method": "embedding",
+                "retrieval_method": "embedding_rerank",
             }
         except Exception as e:
             # 降级到 TF-IDF 检索
@@ -95,10 +108,34 @@ class SearchHistoryTool(BaseTool):
                 "fallback_reason": str(e),
             }
 
-    # ---------------- 向量检索（主路径） ----------------
+    # ---------------- 两阶段检索（主路径） ----------------
 
-    def _vector_search(self, query: str, report_files: List[str], top_k: int) -> List[Dict]:
-        """Chroma + DashScope Embedding 向量检索"""
+    def _vector_search_with_rerank(
+        self, query: str, report_files: List[str], top_k: int
+    ) -> List[Dict]:
+        """两阶段检索：Embedding 召回 + LLM Reranker 重排"""
+        # Stage 1: 向量检索召回候选（放大 top_k * factor 倍）
+        candidates = self._vector_recall(query, report_files, top_k)
+
+        if not candidates:
+            return []
+
+        # 候选数 ≤ top_k 时无需重排
+        if len(candidates) <= top_k:
+            return candidates
+
+        # Stage 2: LLM Reranker 重排序
+        try:
+            reranked = self._llm_rerank(query, candidates, top_k)
+            return reranked
+        except Exception as e:
+            # Reranker 失败：返回向量检索的原始 top_k 结果
+            return candidates[:top_k]
+
+    def _vector_recall(
+        self, query: str, report_files: List[str], top_k: int
+    ) -> List[Dict]:
+        """Stage 1: Chroma + DashScope Embedding 向量召回（over-fetch）"""
         from langchain_community.embeddings import DashScopeEmbeddings
         from langchain_chroma import Chroma
         from langchain_core.documents import Document as LCDocument
@@ -131,10 +168,14 @@ class SearchHistoryTool(BaseTool):
         if vectorstore is None:
             raise RuntimeError("向量库构建失败")
 
-        # 相似度检索
+        # 召回阶段：放大 top_k * factor 倍，给 Reranker 更多候选
+        recall_k = min(
+            top_k * self.RERANK_OVERFETCH_FACTOR,
+            self.RERANK_MAX_CANDIDATES,
+        )
         retriever = vectorstore.as_retriever(
             search_type="similarity",
-            search_kwargs={"k": top_k},
+            search_kwargs={"k": recall_k},
         )
         docs = retriever.invoke(query)
 
@@ -154,6 +195,111 @@ class SearchHistoryTool(BaseTool):
             })
 
         return results
+
+    # ---------------- LLM Reranker（Stage 2） ----------------
+
+    RERANK_PROMPT = """你是一个专业的检索结果重排序器（Reranker）。
+请根据用户查询，对以下候选文档片段的相关性进行评分（0-10 分，10 分最相关）。
+
+评分标准：
+- 10 分：完全匹配用户查询意图，包含直接答案
+- 7-9 分：高度相关，包含用户需要的核心信息
+- 4-6 分：部分相关，包含一些有用信息
+- 1-3 分：弱相关，信息有限
+- 0 分：完全不相关
+
+【用户查询】
+{query}
+
+【候选文档】
+{candidates}
+
+请返回一个 JSON 数组，每个元素包含 index（候选编号，从 0 开始）和 score（0-10）：
+[{{"index": 0, "score": 9}}, {{"index": 1, "score": 5}}, ...]
+
+注意：只返回 JSON 数组，不要有其他内容。"""
+
+    def _llm_rerank(
+        self, query: str, candidates: List[Dict], top_k: int
+    ) -> List[Dict]:
+        """Stage 2: 用 LLM 对候选片段评分重排
+
+        Args:
+            query: 用户查询
+            candidates: Stage 1 召回的候选列表
+            top_k: 最终返回的数量
+
+        Returns:
+            重排序后的 top_k 结果，每个 result 加 rerank_score 字段
+        """
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        api_key = os.environ.get("QWEN_API_KEY")
+        if not api_key:
+            raise RuntimeError("未设置 QWEN_API_KEY，无法使用 LLM Reranker")
+
+        # 构造候选文档列表文本（限制每个 snippet 长度控制 token）
+        candidate_texts = []
+        for i, cand in enumerate(candidates):
+            snippet = cand.get("snippet", "")[:200]  # 限制长度
+            filename = cand.get("filename", "")
+            candidate_texts.append(f"[{i}] 文件: {filename}\n内容: {snippet}")
+        candidates_text = "\n\n".join(candidate_texts)
+
+        # 调用 LLM 评分
+        llm = ChatOpenAI(
+            model="qwen3-max",
+            api_key=api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            temperature=0.0,  # 评分任务用确定性输出
+            max_tokens=1000,
+            timeout=30,
+        )
+
+        prompt = self.RERANK_PROMPT.format(
+            query=query,
+            candidates=candidates_text,
+        )
+
+        response = llm.invoke([
+            SystemMessage(content="你是一个检索结果重排序器，只输出 JSON。"),
+            HumanMessage(content=prompt),
+        ])
+        content = response.content.strip()
+
+        # 解析 JSON 数组
+        # 兼容 LLM 可能输出 ```json ... ``` 包裹的情况
+        json_match = re.search(r'\[.*?\]', content, re.DOTALL)
+        if not json_match:
+            raise RuntimeError(f"LLM Reranker 返回格式异常: {content[:200]}")
+
+        scores = json.loads(json_match.group())
+
+        # 构建 index -> score 映射
+        score_map: Dict[int, float] = {}
+        for item in scores:
+            if isinstance(item, dict):
+                idx = int(item.get("index", -1))
+                score = float(item.get("score", 0.0))
+                if 0 <= idx < len(candidates):
+                    score_map[idx] = score
+
+        # 按重排序分数排序候选
+        reranked = []
+        for idx, cand in enumerate(candidates):
+            rerank_score = score_map.get(idx, 0.0)
+            new_cand = dict(cand)
+            new_cand["rerank_score"] = rerank_score
+            # 用 rerank_score 覆盖原始 score（前端展示用）
+            new_cand["original_score"] = cand.get("score", 0.0)
+            new_cand["score"] = rerank_score
+            reranked.append(new_cand)
+
+        # 按重排序分数降序
+        reranked.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)
+
+        return reranked[:top_k]
 
     def _build_or_update_vectorstore(self, embeddings, text_splitter, report_files: List[str]):
         """构建或增量更新向量库"""
