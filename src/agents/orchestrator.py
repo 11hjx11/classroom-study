@@ -110,6 +110,8 @@ class TokenTrackingCallback(BaseCallbackHandler):
 class AgentState(TypedDict):
     """LangGraph 状态：消息列表使用 add_messages reducer 自动累加"""
     messages: Annotated[list, add_messages]
+    reflection_count: int  # 反思重试次数
+    reflection_feedback: str  # 反思反馈（不达标时记录原因）
 
 
 # ============================================================
@@ -218,26 +220,38 @@ class ClassAgent:
         return [_wrap_as_langchain_tool(t) for t in self.registry.get_all_tools()]
 
     def _build_graph(self):
-        """构建并编译 LangGraph 状态图（ReAct 模式 + MemorySaver 检查点）"""
+        """构建并编译 LangGraph 状态图（ReAct + Reflection 反思 + MemorySaver）"""
         graph = StateGraph(AgentState)
 
         graph.add_node("agent", self._agent_node)
         graph.add_node("tools", self._tools_node)
+        graph.add_node("reflection", self._reflection_node)
 
         graph.set_entry_point("agent")
 
+        # agent 节点：有 tool_calls → tools；无 tool_calls → reflection
         graph.add_conditional_edges(
             "agent",
             self._should_continue,
             {
                 "tools": "tools",
+                "reflection": "reflection",
+            },
+        )
+
+        # tools 执行完回到 agent
+        graph.add_edge("tools", "agent")
+
+        # reflection 节点：质量达标 → END；不达标且重试<2 → agent
+        graph.add_conditional_edges(
+            "reflection",
+            self._reflection_should_continue,
+            {
+                "retry": "agent",
                 "end": END,
             },
         )
 
-        graph.add_edge("tools", "agent")
-
-        # 编译时传入 MemorySaver，实现状态持久化
         return graph.compile(checkpointer=self._memory)
 
     # ---------------- LangGraph 节点 ----------------
@@ -275,10 +289,84 @@ class ClassAgent:
         return self._tools_node(state)
 
     def _should_continue(self, state: AgentState) -> str:
-        """条件边：判断是否继续调用工具"""
+        """条件边：有 tool_calls → tools；无 tool_calls → reflection（反思）"""
         last_message = state["messages"][-1]
         if isinstance(last_message, AIMessage) and last_message.tool_calls:
             return "tools"
+        return "reflection"
+
+    # ---------------- Reflection 反思节点 ----------------
+
+    REFLECTION_PROMPT = """你是一个回答质量评估器。请评估 Agent 的最终回答是否满足以下标准：
+
+1. **相关性**：回答是否直接回应了用户的问题？
+2. **完整性**：回答是否提供了足够的信息？是否有明显遗漏？
+3. **准确性**：回答中的数据/结论是否基于工具返回的结果？有无编造？
+4. **清晰度**：回答是否结构清晰、易于理解？
+
+请返回一个 JSON 对象：
+{"quality": "good" 或 "poor", "feedback": "如果不达标，说明具体原因和改进建议"}
+
+注意：只返回 JSON，不要有其他内容。如果回答质量合格，feedback 可以为空。"""
+
+    MAX_REFLECTION_RETRIES = 2
+
+    def _reflection_node(self, state: AgentState) -> Dict:
+        """反思节点：评估 Agent 回答质量，不达标时触发重试"""
+        reflection_count = state.get("reflection_count", 0)
+
+        # 超过最大重试次数，直接通过
+        if reflection_count >= self.MAX_REFLECTION_RETRIES:
+            return {"reflection_count": reflection_count}
+
+        # 取最后一条 AI 消息（Agent 的回答）
+        last_message = state["messages"][-1]
+        if not isinstance(last_message, AIMessage) or not last_message.content:
+            return {"reflection_count": reflection_count}
+
+        # 用 LLM 评估回答质量
+        eval_messages = [
+            SystemMessage(content=self.REFLECTION_PROMPT),
+            HumanMessage(content=f"用户问题：{state['messages'][0].content if state['messages'] else ''}\n\nAgent回答：{last_message.content}"),
+        ]
+
+        try:
+            response = self._llm.invoke(eval_messages)
+            import re
+            json_match = re.search(r'\{[^}]+\}', response.content.strip())
+            if json_match:
+                decision = json.loads(json_match.group())
+                quality = decision.get("quality", "good")
+                feedback = decision.get("feedback", "")
+            else:
+                quality = "good"
+                feedback = ""
+        except Exception:
+            quality = "good"
+            feedback = ""
+
+        new_count = reflection_count + 1
+
+        if quality == "poor" and feedback and new_count < self.MAX_REFLECTION_RETRIES:
+            # 不达标：把反馈作为新的人类消息加入，让 Agent 重新回答
+            retry_msg = HumanMessage(
+                content=f"[系统反思反馈] 你的上一个回答质量不达标，原因：{feedback}。请基于此反馈改进回答。"
+            )
+            return {
+                "messages": [retry_msg],
+                "reflection_count": new_count,
+                "reflection_feedback": feedback,
+            }
+
+        # 达标或达到最大重试次数：通过
+        return {"reflection_count": new_count}
+
+    def _reflection_should_continue(self, state: AgentState) -> str:
+        """反思条件边：有反馈 → retry；无反馈 → end"""
+        feedback = state.get("reflection_feedback", "")
+        count = state.get("reflection_count", 0)
+        if feedback and count < self.MAX_REFLECTION_RETRIES:
+            return "retry"
         return "end"
 
     def _get_config(self) -> Dict:
@@ -326,7 +414,7 @@ class ClassAgent:
 
         try:
             final_state = self._graph.invoke(
-                {"messages": messages},
+                {"messages": messages, "reflection_count": 0, "reflection_feedback": ""},
                 config=config,
             )
             final_messages: List[BaseMessage] = final_state["messages"]
@@ -364,7 +452,7 @@ class ClassAgent:
 
         try:
             final_state = await self._graph.ainvoke(
-                {"messages": messages},
+                {"messages": messages, "reflection_count": 0, "reflection_feedback": ""},
                 config=config,
             )
             final_messages: List[BaseMessage] = final_state["messages"]
@@ -408,7 +496,7 @@ class ClassAgent:
 
         try:
             for event in self._graph.stream(
-                {"messages": messages},
+                {"messages": messages, "reflection_count": 0, "reflection_feedback": ""},
                 config=config,
                 stream_mode="updates",
             ):
@@ -470,6 +558,22 @@ class ClassAgent:
                                     "message": f"{msg.name} 执行完成",
                                 }
 
+                    elif node_name == "reflection":
+                        feedback = node_output.get("reflection_feedback", "")
+                        count = node_output.get("reflection_count", 0)
+                        if feedback:
+                            yield {
+                                "type": "reflection",
+                                "data": {"count": count, "feedback": feedback},
+                                "message": f"反思：回答质量不达标，正在改进（第{count}次重试）",
+                            }
+                        else:
+                            yield {
+                                "type": "status",
+                                "data": "reflection_passed",
+                                "message": "回答质量评估通过",
+                            }
+
             # 保存对话历史
             self.conversation_history = self._messages_to_dicts(new_messages)
 
@@ -501,7 +605,7 @@ class ClassAgent:
 
         try:
             async for event in self._graph.astream(
-                {"messages": messages},
+                {"messages": messages, "reflection_count": 0, "reflection_feedback": ""},
                 config=config,
                 stream_mode="updates",
             ):
