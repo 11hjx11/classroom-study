@@ -241,9 +241,9 @@ class MultiAgentOrchestrator:
         if turn_count >= MAX_SUPERVISOR_TURNS:
             return {"next_agent": "FINISH"}
 
-        # 提取原始用户问题（第一条 HumanMessage）
+        # 提取当前用户问题（取最后一条 HumanMessage，避免多轮对话时取到历史 query）
         original_query = ""
-        for msg in state["messages"]:
+        for msg in reversed(state["messages"]):
             if isinstance(msg, HumanMessage):
                 original_query = msg.content
                 break
@@ -398,9 +398,9 @@ class MultiAgentOrchestrator:
         agent_outputs: Dict[str, str] = dict(state.get("agent_outputs", {}) or {})
         agent_history: List[str] = list(state.get("agent_history", []) or [])
 
-        # 提取原始用户问题
+        # 提取当前用户问题（取最后一条 HumanMessage，避免多轮对话时取到历史 query）
         original_query = ""
-        for msg in state["messages"]:
+        for msg in reversed(state["messages"]):
             if isinstance(msg, HumanMessage):
                 original_query = msg.content
                 break
