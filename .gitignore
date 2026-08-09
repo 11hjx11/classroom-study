@@ -56,21 +56,44 @@ cache_csv/*
 !cache_csv/.gitkeep
 reports/*
 !reports/.gitkeep
+# 保留评估报告（评估体系的产物，展示 Agent 能力指标）
+!reports/evaluation_report.json
 
-outputs/csv/*.csv
-outputs/reports/*.txt
-outputs/reports/*.json
-outputs/visualizations/*.png
-outputs/visualizations/*.jpg
-outputs/visualizations/*.txt
-outputs/visualizations/*.pdf
-outputs/visualizations/*.html
+# outputs 子目录：全部忽略（只留 .gitkeep 占位）
+outputs/**/*
+!outputs/*/.gitkeep
 
-screenshots/
-
-# 向量库持久化目录（Chroma）
+# Chroma 向量库持久化目录
 chroma_db/
 
-# 临时调试脚本
+# 本地 SQlite / RocksDB
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+
+# 未使用的遗留字体文件（chat.html 实际引用 Google Fonts CDN，没有本地 css）
+frontend/static/webfonts/
+frontend/static/css/
+
+# 临时调试/烟测脚本（以 _ 开头避免被误提交）
 check_*.py
+_*.py
 test_js_syntax.py
+_smoke_*.py
+
+# 截图与日志
+screenshots/
+*.log
+*.csv.tmp
+*.zip
+*.rar
+*.tar.gz
+
+# LangSmith / LangChain 本地缓存
+.langchain_checkpoint/
+.langchain/
+
+# Windows 缩略图
+Thumbs.db
+ehthumbs.db
+Desktop.ini
