@@ -479,9 +479,70 @@ class ClassAgent:
 
     def chat_stream(self, user_message: str, thread_id: str = None) -> Generator:
         """
-        与 Agent 对话（流式）
-        逐步 yield 事件，前端通过 SSE 接收
+        与 Agent 对话（流式 - Token 级）
+        使用 astream_events 实现 token-by-token 流式输出，前端通过 SSE 接收
         若 LLM 不可用，自动降级为关键词匹配模式
+
+        同步接口：内部用独立线程跑异步事件循环，通过 queue 把事件传回主线程
+        """
+        import asyncio
+        import queue
+        import threading
+
+        if thread_id:
+            self.set_thread_id(thread_id)
+
+        q: "queue.Queue" = queue.Queue()
+        SENTINEL = object()
+
+        async def _run_async():
+            try:
+                async for evt in self.achat_stream(user_message, thread_id=None):
+                    # 注意：thread_id 已在上方 set，传 None 避免重复设置
+                    q.put(evt)
+            except Exception as e:
+                traceback.print_exc()
+                q.put({
+                    "type": "status",
+                    "data": "fallback",
+                    "message": "LLM 不可用，使用降级模式...",
+                })
+                fallback_result = self._fallback_handle(user_message)
+                q.put({"type": "content", "data": fallback_result.get("message", "")})
+                q.put({"type": "done", "data": None, "message": "分析完成"})
+            finally:
+                q.put(SENTINEL)
+
+        def _run_in_thread():
+            try:
+                asyncio.run(_run_async())
+            except Exception as e:
+                traceback.print_exc()
+                q.put({"type": "error", "data": None, "message": str(e)})
+                q.put(SENTINEL)
+
+        thread = threading.Thread(target=_run_in_thread, daemon=True)
+        thread.start()
+
+        while True:
+            item = q.get()
+            if item is SENTINEL:
+                break
+            yield item
+
+    async def achat_stream(self, user_message: str, thread_id: str = None) -> AsyncGenerator:
+        """
+        与 Agent 对话（异步流式 - Token 级）
+        基于 LangGraph astream_events(version="v2") 实现 token-by-token 流式输出
+
+        事件类型：
+          - status:    状态变化（thinking / executing_tools / reflection_passed 等）
+          - token:     LLM 单 token 输出（前端可逐字显示）
+          - tool_call: Agent 决定调用工具
+          - tool_result / tool_error: 工具执行结果
+          - reflection: 反思节点反馈（不达标时触发重试）
+          - content:   完整内容块（降级模式使用）
+          - done:      流结束
         """
         if thread_id:
             self.set_thread_id(thread_id)
@@ -493,181 +554,151 @@ class ClassAgent:
         yield {"type": "status", "data": "thinking", "message": "正在分析您的问题..."}
 
         new_messages: List[BaseMessage] = []
+        # 标记是否已经流式输出了 token，用于判断是否需要降级
+        has_streamed_tokens = False
 
         try:
-            for event in self._graph.stream(
-                {"messages": messages, "reflection_count": 0, "reflection_feedback": ""},
+            async for event in self._graph.astream_events(
+                {
+                    "messages": messages,
+                    "reflection_count": 0,
+                    "reflection_feedback": "",
+                },
                 config=config,
-                stream_mode="updates",
+                version="v2",
             ):
-                for node_name, node_output in event.items():
-                    new_msgs: List[BaseMessage] = node_output.get("messages", []) or []
-                    new_messages.extend(new_msgs)
+                kind = event.get("event", "")
+                name = event.get("name", "")
+                data = event.get("data", {}) or {}
+                metadata = event.get("metadata", {}) or {}
+                langgraph_node = metadata.get("langgraph_node", "")
 
-                    if node_name == "agent":
-                        for msg in new_msgs:
-                            if not isinstance(msg, AIMessage):
-                                continue
-                            if msg.tool_calls:
-                                func_names = [
-                                    tc.get("name", "") for tc in msg.tool_calls
-                                ]
-                                yield {
-                                    "type": "tool_call",
-                                    "data": {"tools": func_names},
-                                    "message": f"调用工具: {', '.join(func_names)}",
-                                }
-                            if msg.content:
-                                yield {"type": "content", "data": msg.content}
+                # ---------- LLM Token 级流式 ----------
+                # 只流式 "agent" 节点的 LLM 输出，跳过 "reflection" 节点（评估器，不展示给用户）
+                if kind == "on_chat_model_stream" and langgraph_node == "agent":
+                    chunk = data.get("chunk")
+                    if chunk is not None:
+                        content = getattr(chunk, "content", None)
+                        if content:
+                            has_streamed_tokens = True
+                            yield {"type": "token", "data": content}
 
-                    elif node_name == "tools":
+                # ---------- LLM 调用结束：检查是否有 tool_calls ----------
+                elif kind == "on_chat_model_end" and langgraph_node == "agent":
+                    output = data.get("output")
+                    if output is not None:
+                        if isinstance(output, BaseMessage):
+                            new_messages.append(output)
+                        tool_calls = getattr(output, "tool_calls", None) or []
+                        if tool_calls:
+                            func_names = [tc.get("name", "") for tc in tool_calls]
+                            yield {
+                                "type": "tool_call",
+                                "data": {"tools": func_names},
+                                "message": f"调用工具: {', '.join(func_names)}",
+                            }
+
+                # ---------- 节点级状态事件 ----------
+                elif kind == "on_chain_start":
+                    # tools 节点启动时通知前端
+                    if langgraph_node == "tools":
                         yield {
                             "type": "status",
                             "data": "executing_tools",
                             "message": "执行工具调用...",
                         }
-                        for msg in new_msgs:
-                            if not isinstance(msg, ToolMessage):
-                                continue
-                            try:
-                                parsed = json.loads(msg.content)
-                                if parsed.get("success"):
-                                    yield {
-                                        "type": "tool_result",
-                                        "data": {
-                                            "tool": msg.name,
-                                            "summary": self._summarize_result(
-                                                parsed.get("data", {})
-                                            ),
-                                        },
-                                        "message": f"{msg.name} 执行成功",
-                                    }
-                                else:
-                                    yield {
-                                        "type": "tool_error",
-                                        "data": {
-                                            "tool": msg.name,
-                                            "error": parsed.get("error", "未知错误"),
-                                        },
-                                        "message": f"{msg.name} 执行失败",
-                                    }
-                            except json.JSONDecodeError:
+
+                elif kind == "on_chain_end":
+                    # 节点结束：收集消息 + 处理 reflection 反馈
+                    if langgraph_node in ("agent", "tools", "reflection"):
+                        outputs = data.get("output", {})
+                        # outputs 可能是 dict（节点输出）或 str（内部链）
+                        if not isinstance(outputs, dict):
+                            outputs = {}
+                        node_msgs = outputs.get("messages", []) or []
+                        new_messages.extend(node_msgs)
+
+                        if langgraph_node == "reflection":
+                            feedback = outputs.get("reflection_feedback", "")
+                            count = outputs.get("reflection_count", 0)
+                            if feedback:
                                 yield {
-                                    "type": "tool_result",
-                                    "data": {"tool": msg.name},
-                                    "message": f"{msg.name} 执行完成",
+                                    "type": "reflection",
+                                    "data": {"count": count, "feedback": feedback},
+                                    "message": f"反思：回答质量不达标，正在改进（第{count}次重试）",
+                                }
+                            else:
+                                yield {
+                                    "type": "status",
+                                    "data": "reflection_passed",
+                                    "message": "回答质量评估通过",
                                 }
 
-                    elif node_name == "reflection":
-                        feedback = node_output.get("reflection_feedback", "")
-                        count = node_output.get("reflection_count", 0)
-                        if feedback:
+                # ---------- 工具执行事件 ----------
+                elif kind == "on_tool_start":
+                    self._last_usage.tool_calls += 1
+                    yield {
+                        "type": "status",
+                        "data": "tool_running",
+                        "message": f"执行 {name}...",
+                    }
+
+                elif kind == "on_tool_end":
+                    output = data.get("output")
+                    # output 可能是 ToolMessage / str / dict
+                    if isinstance(output, ToolMessage):
+                        content_str = output.content
+                        tool_name = output.name or name
+                    elif hasattr(output, "content"):
+                        content_str = output.content
+                        tool_name = getattr(output, "name", name)
+                    else:
+                        content_str = str(output) if output else ""
+                        tool_name = name
+
+                    # 把 ToolMessage 加入消息历史
+                    if isinstance(output, ToolMessage):
+                        new_messages.append(output)
+
+                    try:
+                        parsed = json.loads(content_str) if content_str else {}
+                        if parsed.get("success"):
                             yield {
-                                "type": "reflection",
-                                "data": {"count": count, "feedback": feedback},
-                                "message": f"反思：回答质量不达标，正在改进（第{count}次重试）",
+                                "type": "tool_result",
+                                "data": {
+                                    "tool": tool_name,
+                                    "summary": self._summarize_result(
+                                        parsed.get("data", {})
+                                    ),
+                                },
+                                "message": f"{tool_name} 执行成功",
                             }
                         else:
                             yield {
-                                "type": "status",
-                                "data": "reflection_passed",
-                                "message": "回答质量评估通过",
+                                "type": "tool_error",
+                                "data": {
+                                    "tool": tool_name,
+                                    "error": parsed.get("error", "未知错误"),
+                                },
+                                "message": f"{tool_name} 执行失败",
                             }
+                    except (json.JSONDecodeError, TypeError):
+                        yield {
+                            "type": "tool_result",
+                            "data": {"tool": tool_name},
+                            "message": f"{tool_name} 执行完成",
+                        }
 
             # 保存对话历史
             self.conversation_history = self._messages_to_dicts(new_messages)
 
-            yield {"type": "done", "data": None, "message": "分析完成"}
+            # 若 token 流式没有触发（如 LLM 直接返回完整内容未走 stream），降级输出 content
+            if not has_streamed_tokens:
+                for msg in new_messages:
+                    if isinstance(msg, AIMessage) and msg.content and not msg.tool_calls:
+                        yield {"type": "content", "data": msg.content}
+                        break
 
-        except Exception as e:
-            traceback.print_exc()
-            yield {
-                "type": "status",
-                "data": "fallback",
-                "message": "LLM 不可用，使用降级模式...",
-            }
-            fallback_result = self._fallback_handle(user_message)
-            yield {"type": "content", "data": fallback_result.get("message", "")}
-            yield {"type": "done", "data": None, "message": "分析完成"}
-
-    async def achat_stream(self, user_message: str, thread_id: str = None) -> AsyncGenerator:
-        """与 Agent 对话（异步流式）"""
-        if thread_id:
-            self.set_thread_id(thread_id)
-
-        self._last_usage = TokenUsage()
-        messages = self._build_messages(user_message)
-        config = self._get_config()
-
-        yield {"type": "status", "data": "thinking", "message": "正在分析您的问题..."}
-
-        new_messages: List[BaseMessage] = []
-
-        try:
-            async for event in self._graph.astream(
-                {"messages": messages, "reflection_count": 0, "reflection_feedback": ""},
-                config=config,
-                stream_mode="updates",
-            ):
-                for node_name, node_output in event.items():
-                    new_msgs: List[BaseMessage] = node_output.get("messages", []) or []
-                    new_messages.extend(new_msgs)
-
-                    if node_name == "agent":
-                        for msg in new_msgs:
-                            if not isinstance(msg, AIMessage):
-                                continue
-                            if msg.tool_calls:
-                                func_names = [
-                                    tc.get("name", "") for tc in msg.tool_calls
-                                ]
-                                yield {
-                                    "type": "tool_call",
-                                    "data": {"tools": func_names},
-                                    "message": f"调用工具: {', '.join(func_names)}",
-                                }
-                            if msg.content:
-                                yield {"type": "content", "data": msg.content}
-
-                    elif node_name == "tools":
-                        yield {
-                            "type": "status",
-                            "data": "executing_tools",
-                            "message": "执行工具调用...",
-                        }
-                        for msg in new_msgs:
-                            if not isinstance(msg, ToolMessage):
-                                continue
-                            try:
-                                parsed = json.loads(msg.content)
-                                if parsed.get("success"):
-                                    yield {
-                                        "type": "tool_result",
-                                        "data": {
-                                            "tool": msg.name,
-                                            "summary": self._summarize_result(
-                                                parsed.get("data", {})
-                                            ),
-                                        },
-                                        "message": f"{msg.name} 执行成功",
-                                    }
-                                else:
-                                    yield {
-                                        "type": "tool_error",
-                                        "data": {
-                                            "tool": msg.name,
-                                            "error": parsed.get("error", "未知错误"),
-                                        },
-                                        "message": f"{msg.name} 执行失败",
-                                    }
-                            except json.JSONDecodeError:
-                                yield {
-                                    "type": "tool_result",
-                                    "data": {"tool": msg.name},
-                                    "message": f"{msg.name} 执行完成",
-                                }
-
-            self.conversation_history = self._messages_to_dicts(new_messages)
             yield {"type": "done", "data": None, "message": "分析完成"}
 
         except Exception as e:

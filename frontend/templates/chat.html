@@ -707,6 +707,21 @@
                     setStatus('执行工具中...', true);
                     break;
 
+                case 'token':
+                    // Token 级流式输出：逐 token 追加到当前 Agent 消息
+                    removeTypingIndicator();
+                    let tokenEl = document.querySelector('.message.agent:last-of-type .message-content');
+                    if (!tokenEl || (!tokenEl.textContent && !tokenEl.innerHTML.trim())) {
+                        const msgEl = addAgentMessage();
+                        msgEl.textContent = '';
+                        tokenEl = msgEl;
+                    }
+                    if (tokenEl) {
+                        tokenEl.textContent = (tokenEl.textContent || '') + (data || '');
+                    }
+                    scrollToBottom();
+                    break;
+
                 case 'content':
                     removeTypingIndicator();
                     let contentEl = document.querySelector('.message.agent:last-of-type .message-content');
@@ -719,6 +734,14 @@
                         contentEl.textContent = (contentEl.textContent || '') + (data || '');
                     }
                     scrollToBottom();
+                    break;
+
+                case 'reflection':
+                    // 反思节点反馈：回答质量不达标，正在重试
+                    if (data && data.feedback) {
+                        addToolCall(`反思 #${data.count || 1}: ${data.feedback}`);
+                    }
+                    setStatus(message || '反思改进中...', true);
                     break;
 
                 case 'tool_result':
