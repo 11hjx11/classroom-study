@@ -68,6 +68,9 @@ outputs/visualizations/*.html
 
 screenshots/
 
+# 向量库持久化目录（Chroma）
+chroma_db/
+
 # 临时调试脚本
 check_*.py
 test_js_syntax.py
